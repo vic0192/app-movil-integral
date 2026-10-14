@@ -1,0 +1,2 @@
+﻿10-14 02:36:17.404 I/Zygote  (  467): Process 5646 exited due to signal 9 (Killed)
+10-14 02:36:17.785 I/Zygote  ( 5846): Process 5846 created for com.example.biomedica_app

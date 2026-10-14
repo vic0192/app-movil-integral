@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_widget_description">Resumen de signos vitales de BioMedica.</string>
+</resources>
