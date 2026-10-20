@@ -12,6 +12,7 @@ import '../widgets/history_reading_tile.dart';
 import '../widgets/turn_queue_demo.dart';
 import '../widgets/turn_status_hero.dart';
 import '../widgets/vital_indicator_card.dart';
+import 'reports_screen.dart';
 import 'wearable_pairing_sheet.dart';
 
 class PatientShell extends StatefulWidget {
@@ -327,7 +328,13 @@ class _PatientShellState extends State<PatientShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [_home(), _historyPage(), _turnPage(), _profilePage()];
+    final pages = [
+      _home(),
+      _historyPage(),
+      _reportsPage(),
+      _turnPage(),
+      _profilePage(),
+    ];
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -360,6 +367,11 @@ class _PatientShellState extends State<PatientShell> {
                 label: 'Historial',
               ),
               NavigationDestination(
+                icon: Icon(Icons.description_outlined),
+                selectedIcon: Icon(Icons.description_rounded),
+                label: 'Reportes',
+              ),
+              NavigationDestination(
                 icon: Icon(Icons.confirmation_number_outlined),
                 selectedIcon: Icon(Icons.confirmation_number_rounded),
                 label: 'Mi turno',
@@ -375,6 +387,10 @@ class _PatientShellState extends State<PatientShell> {
       ),
     );
   }
+
+  Widget _reportsPage() => ReportsScreen(
+    patientName: widget.patientName,
+  );
 
   Widget _home() => _scroll([
     _topBar(),
@@ -410,9 +426,20 @@ class _PatientShellState extends State<PatientShell> {
     _wearableCard(),
     const SizedBox(height: 20),
     _sectionTitle(
+      'Reportes de salud',
+      action: 'Ver reportes',
+      onTap: () => setState(() => _tab = 2),
+    ),
+    const SizedBox(height: 9),
+    const Text(
+      'Guarda, consulta y administra reportes privados en Firebase.',
+      style: TextStyle(color: BioMedicaColors.muted, fontSize: 12),
+    ),
+    const SizedBox(height: 20),
+    _sectionTitle(
       'Tu turno',
       action: 'Ver turno',
-      onTap: () => setState(() => _tab = 2),
+      onTap: () => setState(() => _tab = 3),
     ),
     const SizedBox(height: 9),
     _turnSummary(),
@@ -691,7 +718,7 @@ class _PatientShellState extends State<PatientShell> {
   }
 
   Widget _turnSummary() => InkWell(
-    onTap: () => setState(() => _tab = 2),
+    onTap: () => setState(() => _tab = 3),
     borderRadius: BorderRadius.circular(14),
     child: const TurnStatusHero(
       ticketNumber: 'B-024',

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Práctica: base de datos conectada a móvil — BioMedica</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #10264d;
+      --muted: #596b88;
+      --blue: #1858c8;
+      --line: #dce5f2;
+      --pale: #f4f7fc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--pale);
+      color: var(--ink);
+      font: 15px/1.55 "Segoe UI", Arial, sans-serif;
+    }
+    main {
+      max-width: 940px;
+      margin: 28px auto;
+      padding: 42px 54px;
+      background: white;
+      box-shadow: 0 10px 35px #10264d12;
+    }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { margin-bottom: 8px; font-size: 29px; }
+    h2 {
+      margin-top: 30px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      font-size: 20px;
+    }
+    h3 { margin-bottom: 6px; font-size: 16px; }
+    .subtitle, .muted { color: var(--muted); }
+    .callout {
+      margin: 18px 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--blue);
+      background: #eaf1ff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #eaf1ff; }
+    code {
+      padding: 1px 4px;
+      background: #f1f4f9;
+      overflow-wrap: anywhere;
+    }
+    figure {
+      margin: 14px 0 20px;
+      page-break-inside: avoid;
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      max-height: 690px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      background: white;
+    }
+    figcaption { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .pending { color: #80530c; font-weight: 700; }
+    .conclusion {
+      padding: 16px;
+      background: #f4f7fc;
+      border-radius: 8px;
+    }
+    .cover {
+      display: flex;
+      min-height: 950px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 34px 0;
+      text-align: center;
+    }
+    .cover img {
+      width: 190px;
+      height: 190px;
+      object-fit: contain;
+    }
+    .cover h1 {
+      max-width: 700px;
+      margin: 32px auto 12px;
+      color: var(--ink);
+      font-size: 30px;
+    }
+    .cover .institution {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .cover .course {
+      margin-top: 12px;
+      color: var(--blue);
+      font-size: 19px;
+      font-weight: 700;
+    }
+    .cover-details {
+      display: grid;
+      width: min(100%, 560px);
+      grid-template-columns: 1fr 1fr;
+      gap: 16px 28px;
+      margin: 44px auto 24px;
+      text-align: left;
+    }
+    .cover-details div { border-bottom: 1px solid var(--line); padding: 8px 0; }
+    .cover-details dt { color: var(--muted); font-size: 12px; }
+    .cover-details dd { margin: 3px 0 0; font-weight: 700; }
+    @media print {
+      @page { size: letter; margin: 0.65in; }
+      body { background: white; }
+      body { font-size: 10.5pt; }
+      main { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+      .cover { min-height: 9.7in; break-after: page; }
+      .cover img { width: 2in; height: 2in; }
+      .report-content { display: block; }
+      h2 { break-after: avoid; }
+      table { font-size: 8.5pt; }
+      thead { display: table-header-group; }
+      tr, figure, .conclusion { break-inside: avoid; }
+      figure img { max-height: 5.6in; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="cover">
+    <img src="practica_firestore_evidencias/logo-uteq.png" alt="Logotipo de la Universidad Tecnológica de Querétaro">
+    <div>
+      <div class="institution">UNIVERSIDAD TECNOLÓGICA DE QUERÉTARO</div>
+      <h1>Práctica de base de datos móvil con Cloud Firestore</h1>
+      <div class="subtitle">Integridad, persistencia, actualización, eliminación y manejo de errores</div>
+      <div class="course">Desarrollo Móvil Integral</div>
+    </div>
+    <dl class="cover-details">
+      <div><dt>Alumno</dt><dd>Víctor Emanuel Rodríguez Ochoa</dd></div>
+      <div><dt>Grupo</dt><dd>IDGS14</dd></div>
+      <div><dt>Maestro</dt><dd>Manuel Contreras Castillo</dd></div>
+      <div><dt>Fecha</dt><dd>16 de octubre de 2026</dd></div>
+      <div><dt>Aplicación</dt><dd>BioMedica</dd></div>
+      <div><dt>Base de datos</dt><dd>Firebase Cloud Firestore</dd></div>
+    </dl>
+  </section>
+  <div class="report-content">
+
+  <h2>Objetivo</h2>
+  <p>Integrar una base de datos no relacional a BioMedica y verificar la
+  integridad, persistencia, consulta, actualización, eliminación y manejo de
+  errores de reportes de equipo.</p>
+
+  <h2>Implementación</h2>
+  <ul>
+    <li>Se agregó una pestaña <strong>Reportes</strong> a BioMedica Flutter.</li>
+    <li>La colección Firestore es <code>reportes</code>. Cada documento usa
+      como ID el identificador del reporte (p. ej. <code>REP001</code>) y
+      almacena <code>equipment</code>, <code>description</code>,
+      <code>priority</code>, <code>ownerUid</code> y marcas de tiempo.</li>
+    <li>Firebase Authentication crea una sesión anónima. La app filtra por UID,
+      ordena los resultados en el dispositivo, y permite crear, leer, editar y
+      eliminar reportes.</li>
+    <li>Se prepararon reglas en <code>firestore.rules</code> para limitar cada
+      documento a su propietario y validar campos, tipos y rangos. Aún no se
+      han publicado en Firebase; por tanto, la política efectiva del proyecto
+      queda pendiente de confirmar.</li>
+    <li>La consulta se cambió para no requerir un índice compuesto de Firestore.
+      La captura enviada mostraba el error de ese índice; ya no se ordena en la
+      consulta remota.</li>
+  </ul>
+  <div class="callout"><strong>Validación:</strong> equipo y descripción son
+  obligatorios. Prioridad acepta <code>Baja</code>, <code>Media</code> o
+  <code>Alta</code>. La autenticación anónima y las reglas por propietario
+  corresponden al escenario de prácticas.</div>
+
+  <h2>Matriz de pruebas Firestore</h2>
+  <table>
+    <thead><tr><th>Caso</th><th>Acción y esperado</th><th>Resultado observado</th><th>Estado</th></tr></thead>
+    <tbody>
+      <tr><td>TC01 — Alta válida</td><td>Guardar equipo, descripción y prioridad con ID REP001; consultar el documento.</td><td>REP001 se creó y apareció en la lista real de Firestore, con equipo “Monitor cardiaco”, descripción “No enciende la pantalla” y prioridad Media. Luego se eliminó en TC05.</td><td>Aprobada — real</td></tr>
+      <tr><td>TC02 — Campos vacíos</td><td>Guardar sin equipo ni descripción; mostrar validación y no crear documento.</td><td>El test de interfaz confirmó los dos mensajes requeridos y que el repositorio no recibió datos.</td><td>Aprobada — automatizada</td></tr>
+      <tr><td>TC03 — ID repetido</td><td>Crear REP001 dos veces; no sobrescribir el primero.</td><td>La captura compartida muestra una sola fila REP001 tras el doble insert, pero en el panel de detalle está seleccionado otro documento con ID automático y campos del esquema anterior. La vista no permite comparar el contenido anterior y posterior de REP001 ni demostrar por sí sola que el segundo intento se rechazó. El test simulado sí comprueba que la capa de repositorio rechaza duplicados.</td><td>Parcial — evidencia de consola, resultado de sobrescritura no concluyente</td></tr>
+      <tr><td>TC04 — Actualización</td><td>Cambiar prioridad Media → Alta y volver a consultar.</td><td>En Firestore real se actualizó REP001 a Alta y el cambio reapareció en la lista.</td><td>Aprobada — real</td></tr>
+      <tr><td>TC05 — Eliminación</td><td>Eliminar REP001 y consultarlo nuevamente.</td><td>Se confirmó la eliminación desde la app y el listado real quedó vacío.</td><td>Aprobada — real</td></tr>
+      <tr><td>TC06 — Documento inexistente</td><td>Consultar el ID REP999 sin bloquear.</td><td>La búsqueda real mostró “No se encontró el reporte REP999” y la app siguió respondiendo.</td><td>Aprobada — real</td></tr>
+      <tr><td>TC07 — Pérdida de conexión</td><td>Desactivar la conexión durante escritura e informar el estado.</td><td>El test automatizado simula error “Sin conexión con Firebase”; no se hizo una desconexión de red durante una escritura real. Firestore puede mantener escrituras pendientes en caché.</td><td>Parcial — falta prueba de red</td></tr>
+      <tr><td>TC08 — Persistencia</td><td>Cerrar/abrir app y consultar un reporte guardado.</td><td>REP008 se creó en Firestore; tras forzar el cierre, abrir de nuevo e iniciar sesión, REP008 volvió a aparecer con sus campos.</td><td>Aprobada — real</td></tr>
+      <tr><td>Análisis estático</td><td><code>flutter analyze</code>.</td><td>Terminó con “No issues found”.</td><td>Aprobada</td></tr>
+      <tr><td>Pruebas automatizadas</td><td><code>flutter test test\reports_screen_test.dart test\widget_test.dart</code>.</td><td>18 pruebas pasaron, incluidos TC01–TC08; TC07 y TC03 están simuladas.</td><td>Aprobada — 18 pruebas</td></tr>
+      <tr><td>Build Android</td><td><code>flutter build apk --debug</code>.</td><td>Generó <code>build\app\outputs\flutter-apk\app-debug.apk</code>.</td><td>Aprobada</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">La persistencia y CRUD descritos como reales se verificaron en
+  el emulador Android contra el proyecto Firebase indicado. TC03 y TC07 se
+  distinguen expresamente como pruebas simuladas o pendientes de validación real.</p>
+
+  <h2>Evidencias</h2>
+  <figure>
+    <img src="practica_firestore_evidencias/02-reportes-nuevo-esquema.png"
+         alt="Pestaña de reportes conectada al UID anónimo de Firebase">
+    <figcaption>Figura 1. Pestaña de reportes con sesión Firebase; el listado
+    aún estaba vacío antes de crear el reporte.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/03-formulario.png"
+         alt="Formulario para alta de reporte de equipo">
+    <figcaption>Figura 2. Formulario nuevo, con ID opcional, equipo,
+    descripción y prioridad.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/04-reporte-prueba.png"
+         alt="Reporte REP001 guardado y consultado desde Firestore">
+    <figcaption>Figura 3. TC01: REP001 guardado y consultado en la aplicación.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/05-edicion-prioridad.png"
+         alt="Prioridad de REP001 actualizada a Alta">
+    <figcaption>Figura 4. TC04: prioridad actualizada de Media a Alta.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/07-eliminado.png"
+         alt="Listado sin reportes después de eliminar REP001">
+    <figcaption>Figura 5. TC05: lista sin REP001 después de la eliminación.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/10-documento-inexistente.png"
+         alt="Mensaje para el ID de reporte inexistente REP999">
+    <figcaption>Figura 6. TC06: resultado vacío controlado para REP999.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/08-persistencia-antes.png"
+         alt="Reporte REP008 antes de cerrar la aplicación">
+    <figcaption>Figura 7. TC08: REP008 antes de cerrar la aplicación.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/09-persistencia-despues.png"
+         alt="Reporte REP008 tras volver a abrir la aplicación">
+    <figcaption>Figura 8. TC08: el mismo REP008 vuelve a aparecer después de
+    reabrir la app y consultar Firestore.</figcaption>
+  </figure>
+  <figure>
+    <img src="practica_firestore_evidencias/11-firestore-doble-insert.png"
+         alt="Vista de Firebase Console tras el doble insert de REP001">
+    <figcaption>Figura 9. Captura compartida de Firebase Console después del
+    doble insert. La lista muestra una fila REP001; el detalle abierto
+    corresponde a un documento de ID automático y contiene campos del esquema
+    anterior, así que la captura no confirma si REP001 fue rechazado o
+    sobrescrito.</figcaption>
+  </figure>
+  <p class="pending">La captura de Firebase Console fue compartida para el
+  doble insert, pero no permite concluir si el contenido de REP001 cambió.
+  Las reglas actualizadas en <code>firestore.rules</code> todavía deben
+  publicarse y verificarse en el proyecto.</p>
+
+  <h2>Conclusión</h2>
+  <div class="conclusion">
+    <p>Se integraron en BioMedica altas, consultas, actualizaciones y
+    eliminaciones de reportes de equipo en Cloud Firestore. Las validaciones
+    obligatorias, el control de IDs repetidos y la búsqueda de documentos
+    inexistentes evitan errores comunes; la escritura, actualización,
+    eliminación y persistencia tras reabrir se observaron en el emulador con
+    Firestore real. El análisis, las 18 pruebas automatizadas y la compilación
+    Android también finalizaron correctamente.</p>
+    <p>Queda confirmar en Firestore que un segundo alta de REP001 se rechaza
+    sin cambiar los campos del documento; la captura de consola aportada muestra
+    solo una fila, pero no el contenido de REP001. También falta simular una
+    pérdida real de conexión durante una escritura. Aunque el código contiene
+    reglas que limitan cada documento a su dueño,
+    estas aún no se han publicado; por eso la seguridad efectiva del proyecto
+    no queda certificada y no debe considerarse listo para datos reales hasta
+    desplegar y probar esas reglas.</p>
+  </div>
+  </div>
+</main>
+</body>
+</html>

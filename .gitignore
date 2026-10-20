@@ -48,6 +48,10 @@ app.*.map.json
 /android/**/build/
 /android/**/.kotlin/
 
+# Local release artifacts; distribute APKs through GitHub Releases instead.
+/*.apk
+/*.tmp.pdf
+
 # iOS generated settings and native build artifacts
 /ios/Flutter/Generated.xcconfig
 /ios/Flutter/flutter_export_environment.sh

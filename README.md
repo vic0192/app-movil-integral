@@ -86,7 +86,7 @@ Respuestas breves:
 - [Reporte en PDF](Practica_5_Reporte_AccesoSeguro.pdf)
 - [Reporte en HTML](Practica_5_Reporte_AccesoSeguro.html)
 - [Capturas del emulador y Logcat](practica5_evidencias/)
-- [Repositorio del proyecto en GitHub](https://github.com/vic0192/app-movil-integral)
+- [Repositorio privado del proyecto en GitHub](https://github.com/vic0192/biomedica-integral-entregables)
 
 Para usar otro backend:
 
@@ -98,6 +98,104 @@ La app consulta `GET /api/status` cada 30 segundos. Si la API no responde o no
 tiene lecturas, presenta datos de muestra identificados como demostración. El
 acceso y el registro siguen siendo locales; el turno mostrado es de muestra
 mientras el backend no relacione turnos con una cuenta de paciente.
+
+## Práctica: Firestore y reportes de equipo
+
+La pestaña **Reportes** permite registrar, consultar, actualizar y eliminar
+reportes de equipo en la colección `reportes`. Cada documento contiene su ID
+Firestore (por ejemplo, `REP001`), `equipment`, `description`, `priority`,
+`ownerUid`, `createdAt` y `updatedAt`. Equipo y descripción son obligatorios;
+la prioridad se limita a `Baja`, `Media` o `Alta`. Los reportes están asociados
+al UID de una sesión anónima de Firebase y cada usuario solo puede acceder a
+los suyos.
+
+### Configurar el proyecto Firebase
+
+BioMedica inicializa el proyecto `iotprueba-fc74f` con la configuración web
+proporcionada en `lib\firebase_options.dart`; no se añadió la configuración
+web al código Android nativo. En Firebase Console, activa **Authentication →
+Sign-in method → Anonymous** y **Cloud Firestore**. Registra también la app
+Android con el `applicationId` de `android\app\build.gradle.kts` mediante
+FlutterFire CLI antes de publicar o distribuir fuera de este entorno probado.
+La clave web es un identificador público de Firebase, no una
+contraseña: aplica restricciones de API en Google Cloud y mantén las reglas
+delimitadas por UID.
+
+Selecciona el proyecto correcto y publica `firestore.rules` con Firebase CLI:
+
+   ```powershell
+   firebase use iotprueba-fc74f
+   firebase deploy --only firestore:rules
+   ```
+
+Para sustituir la configuración por opciones nativas de Android y web de
+FlutterFire, registra ambas apps y vuelve a ejecutar:
+
+   ```powershell
+   dart pub global activate flutterfire_cli
+   flutterfire configure
+   ```
+
+   Selecciona el proyecto Firebase y las plataformas requeridas; integra las
+   opciones generadas en `main.dart`. No agregues claves de servidor ni
+   credenciales privadas a Git.
+
+Ejecuta `flutter pub get` y `flutter run`. Inicia sesión en BioMedica,
+   abre **Reportes** y copia el UID de pruebas que aparece debajo del aviso.
+   Si el listado no carga, confirma que Anonymous esté habilitado y que las
+   reglas publicadas coincidan con `firestore.rules`.
+
+Cada documento necesita `ownerUid`, `equipment`, `description`, `priority`,
+`createdAt` y `updatedAt`. Para crear un documento manual, usa el UID de
+pruebas mostrado en **Reportes**, equipo y descripción no vacíos, una prioridad
+permitida y fechas de tipo timestamp. Las reglas impiden lecturas o
+modificaciones entre usuarios y validan el esquema. No uses reglas abiertas en
+una aplicación real.
+
+### Pruebas de interfaz
+
+```powershell
+flutter test test\reports_screen_test.dart
+```
+
+Los casos de TC01 a TC08 se mantienen en
+`test\reports_screen_test.dart`. Los widget tests usan un repositorio falso
+para pruebas repetibles. Se comprobó en el emulador Android que Firestore
+crea, actualiza y elimina reportes, encuentra el estado vacío de REP999 y
+conserva REP008 después de cerrar y abrir la app. TC03 y TC07 aún no se han
+ejecutado contra Firestore real; el test de TC07 solo simula el error.
+
+La consulta de reportes filtra por UID y ordena en el dispositivo para evitar
+depender de un índice compuesto. Si Firebase Console reporta otro error,
+confirma que Anonymous esté habilitado, que Firestore esté activo y que
+`firestore.rules` esté publicado en `iotprueba-fc74f`.
+
+El reporte y las capturas están en [reporte_practica_firestore.html](reporte_practica_firestore.html)
+y [practica_firestore_evidencias](practica_firestore_evidencias/). La captura
+compartida de Firebase Console muestra una fila `REP001`, pero el documento
+seleccionado tiene un ID automático y campos del esquema anterior; por sí sola
+no prueba que el segundo insert se rechazara sin sobrescribir. `firestore.rules`
+está actualizado en el repositorio, pero todavía debe publicarse con Firebase
+CLI y comprobarse en el proyecto; no des por validado el aislamiento de datos
+antes de ese paso.
+
+## Base de datos relacional planeada
+
+El entregable contempla PostgreSQL como base relacional del backend para los
+datos estructurados compartidos entre la app, el sistema web y el panel de
+turnos. La app móvil accederá a PostgreSQL mediante una API autenticada; no se
+deben incluir credenciales SQL en Flutter. Esta conexión aún no está
+implementada. Los reportes de equipo de la versión actual continúan usando
+Cloud Firestore, como se describe arriba.
+
+## Versionamiento
+
+La versión Android se declara en `pubspec.yaml`. El hito `1.1.0+2` agrega el
+flujo de reportes Firestore y sus pruebas. Se registra una corrección verificada:
+la consulta dejó de requerir un índice compuesto al ordenar los resultados
+localmente. Los casos TC03 (duplicado real) y TC07 (pérdida real de conexión)
+siguen pendientes de comprobación contra el servicio. El historial y la
+cantidad de correcciones se documentan sin crear versiones o fallos ficticios.
 
 ## Wear OS y emuladores
 

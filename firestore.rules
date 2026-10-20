@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /reportes/{reportId} {
+      function signedIn() {
+        return request.auth != null;
+      }
+
+      function validReport() {
+        return request.resource.data.keys().hasAll([
+            'ownerUid', 'equipment', 'description', 'priority',
+            'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'ownerUid', 'equipment', 'description', 'priority',
+            'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.equipment is string
+          && request.resource.data.equipment.size() > 0
+          && request.resource.data.equipment.size() <= 100
+          && request.resource.data.description is string
+          && request.resource.data.description.size() > 0
+          && request.resource.data.description.size() <= 500
+          && request.resource.data.priority in ['Baja', 'Media', 'Alta']
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp;
+      }
+
+      allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if signedIn() && validReport();
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && validReport();
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}
