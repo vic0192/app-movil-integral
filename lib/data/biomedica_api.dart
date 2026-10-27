@@ -22,30 +22,6 @@ class BioMedicaApi {
     return _decodeMap(response.body);
   }
 
-  Future<void> pushTelemetry({
-    required String wearableId,
-    required Map<String, Object> measurements,
-  }) async {
-    if (measurements.isEmpty) return;
-
-    final response = await http
-        .post(
-          _uri('/api/telemetry'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'wearableId': wearableId,
-            'source': 'stf-kronos-blaze-ble',
-            ...measurements,
-          }),
-        )
-        .timeout(const Duration(seconds: 8));
-    if (response.statusCode != 200) {
-      throw http.ClientException(
-        'No se pudieron enviar las mediciones (${response.statusCode}).',
-      );
-    }
-  }
-
   Uri _uri(String path) =>
       Uri.parse('${baseUrl.replaceFirst(RegExp(r'/+$'), '')}$path');
 

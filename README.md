@@ -44,17 +44,68 @@ flutter analyze
 flutter test
 ```
 
-## Práctica 5: acceso seguro
+Las pruebas del backend requieren Node.js 20 o superior:
 
-La pantalla de acceso aplica validaciones locales para el usuario (no vacío ni
-solo espacios, máximo 30 caracteres) y la contraseña (mínimo 8 y máximo 30
-caracteres). La contraseña se muestra oculta. Si las credenciales simuladas no
-coinciden, presenta un mensaje genérico y no registra usuario ni contraseña.
+```powershell
+Set-Location backend
+npm ci
+npm test
+```
 
-Para probar el acceso simulado usa el usuario `paciente` y la contraseña
-`BioMedica2026`. Son datos fijos para esta práctica; no representan una cuenta
-real y no deben reutilizarse en producción. El acceso no autentica contra un
-servidor.
+## Acceso y roles
+
+El acceso, los perfiles, las mediciones y los recordatorios usan Supabase Auth
+y PostgreSQL con políticas RLS. Los reportes de equipo se guardan en Firestore
+y se consultan mediante la API de Render, que verifica la sesión de Supabase y
+aplica la identidad del paciente, administrador o médico asignado. Firestore
+no se expone directamente a la app. Las cuentas nuevas empiezan como pacientes
+y requieren confirmar el correo.
+
+La app móvil necesita únicamente la clave publicable. Nunca incluyas una clave
+`service_role` en la app, el JSON local ni el repositorio. Copia
+[supabase.example.json](supabase.example.json) como `supabase.local.json`, pon la
+URL y clave publicable de tu proyecto, y aplica la migración
+[20261027000000_health_data.sql](supabase/migrations/20261027000000_health_data.sql)
+desde el SQL Editor de Supabase. Configura los proveedores de correo para
+exigir confirmación y agrega `com.example.biomedica_app://login-callback/` a
+las URL permitidas de Auth para confirmar cuentas y restablecer contraseñas.
+Android e iOS ya registran ese esquema para volver a la app.
+
+En Render, configura `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` en el servicio
+`biomedica-api`, además de sus variables actuales `DATABASE_URL`,
+`FIREBASE_SERVICE_ACCOUNT_JSON` y `JWT_SECRET`. La clave publicable también se
+usa del lado del servidor para consultas sujetas al token del usuario; nunca
+uses `service_role` en la app. El backend requiere esas variables para iniciar.
+
+Ejecuta la app incluyendo ambos define necesarios:
+
+```powershell
+Copy-Item supabase.example.json supabase.local.json
+# Edita supabase.local.json con los valores de tu proyecto
+flutter run --dart-define-from-file=supabase.local.json `
+  --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
+```
+
+Para registrar el primer administrador, crea y confirma su cuenta y luego
+actualiza su rol desde el SQL Editor de Supabase, sustituyendo el UID por el de
+esa cuenta. Comprueba que se afecte exactamente una fila:
+
+```sql
+UPDATE public.profiles
+SET role = 'admin'
+WHERE id = 'AUTH-USER-UUID'::uuid;
+```
+
+Los recordatorios se guardan por usuario en Supabase y se programan como
+notificaciones locales al iniciar sesión y guardar cambios. El usuario debe
+permitir las notificaciones en el teléfono; el ahorro de batería puede retrasar
+los avisos. Las mediciones reales del reloj se guardan cuando el paciente toca
+**Guardar medición**; las lecturas de demostración no se aceptan.
+
+La API de Render y Firestore que se documentan abajo son componentes heredados
+que siguen utilizándose para el estado/telemetría del dashboard y para
+instalaciones previas; no son el almacenamiento activo de Auth, reportes,
+mediciones ni recordatorios. Los datos históricos no se migran automáticamente.
 
 Ejecuta las pruebas del formulario con:
 
@@ -62,11 +113,9 @@ Ejecuta las pruebas del formulario con:
 flutter test test\widget_test.dart
 ```
 
-Para las evidencias, abre el proyecto en Android Studio y captura la pantalla
-de acceso, un intento con usuario vacío o solo espacios (debe mostrar el error
-de validación), y Logcat después de intentar el acceso válido e inválido. En
-Logcat selecciona el proceso de BioMedica y comprueba que no aparezcan los
-valores introducidos como usuario o contraseña.
+Para las evidencias, prueba correo vacío/mal formado, contraseñas fuera del
+límite o que no coincidan, credenciales incorrectas y registro con confirmación
+de correo en Supabase. En Logcat comprueba que no aparezcan las contraseñas.
 
 Respuestas breves:
 
@@ -88,122 +137,109 @@ Respuestas breves:
 - [Capturas del emulador y Logcat](practica5_evidencias/)
 - [Repositorio privado del proyecto en GitHub](https://github.com/vic0192/biomedica-integral-entregables)
 
-Para usar otro backend:
+Para configurar el servicio heredado de estado/telemetría de Render:
 
 ```powershell
-flutter run --dart-define=BIOMEDICA_API_URL=https://tu-api.example.com
+flutter run --dart-define=BIOMEDICA_CORE_API_URL=https://tu-api.onrender.com
 ```
 
-La app consulta `GET /api/status` cada 30 segundos. Si la API no responde o no
-tiene lecturas, presenta datos de muestra identificados como demostración. El
-acceso y el registro siguen siendo locales; el turno mostrado es de muestra
-mientras el backend no relacione turnos con una cuenta de paciente.
+La API está en [backend/](backend/) y el blueprint de Render en
+[render.yaml](render.yaml). En el dashboard de Render crea los servicios desde
+el blueprint, configura `FIREBASE_SERVICE_ACCOUNT_JSON` en el servicio web con
+una cuenta de servicio limitada al acceso de Firestore, y confirma que el
+servicio pase `GET /health`. Render conecta PostgreSQL mediante `DATABASE_URL`
+y genera `JWT_SECRET`. Nunca guardes claves privadas en el repositorio.
 
-## Práctica: Firestore y reportes de equipo
+La base heredada crea `app_users`, `patient_assignments` y `measurements`.
+Firebase/Firestore se conserva para compatibilidad con ese backend; los flujos
+nuevos de reportes y mediciones usan Supabase.
 
-La pestaña **Reportes** permite registrar, consultar, actualizar y eliminar
-reportes de equipo en la colección `reportes`. Cada documento contiene su ID
-Firestore (por ejemplo, `REP001`), `equipment`, `description`, `priority`,
-`ownerUid`, `createdAt` y `updatedAt`. Equipo y descripción son obligatorios;
-la prioridad se limita a `Baja`, `Media` o `Alta`. Los reportes están asociados
-al UID de una sesión anónima de Firebase y cada usuario solo puede acceder a
-los suyos.
+Para inicializar el primer administrador en una instalación nueva, registra
+una cuenta desde la app y cambia su rol desde la consola PostgreSQL de Render:
 
-### Configurar el proyecto Firebase
+```sql
+UPDATE app_users SET role = 'admin' WHERE email = 'admin@tu-dominio.com';
+```
 
-BioMedica inicializa el proyecto `iotprueba-fc74f` con la configuración web
-proporcionada en `lib\firebase_options.dart`; no se añadió la configuración
-web al código Android nativo. En Firebase Console, activa **Authentication →
-Sign-in method → Anonymous** y **Cloud Firestore**. Registra también la app
-Android con el `applicationId` de `android\app\build.gradle.kts` mediante
-FlutterFire CLI antes de publicar o distribuir fuera de este entorno probado.
-La clave web es un identificador público de Firebase, no una
-contraseña: aplica restricciones de API en Google Cloud y mantén las reglas
-delimitadas por UID.
+Verifica que la consulta afecte exactamente una cuenta. Después, el admin
+promueve médicos y asigna pacientes desde la pestaña **Usuarios** (máximo 30
+pacientes por médico).
 
-Selecciona el proyecto correcto y publica `firestore.rules` con Firebase CLI:
+#### Migración antigua Firebase → Render (no usar para la instalación Supabase)
 
-   ```powershell
-   firebase use iotprueba-fc74f
-   firebase deploy --only firestore:rules
-   ```
+La migración histórica siguiente solo corresponde al backend heredado de
+Render. En esta integración nueva se acordó no migrar cuentas ni datos
+existentes; no ejecutes estos scripts como parte de la puesta en marcha de
+Supabase.
 
-Para sustituir la configuración por opciones nativas de Android y web de
-FlutterFire, registra ambas apps y vuelve a ejecutar:
+Antes de permitir nuevos registros, ejecuta una vez el importador en el Shell
+del servicio de Render, donde ya están configurados `DATABASE_URL` y
+`FIREBASE_SERVICE_ACCOUNT_JSON`:
 
-   ```powershell
-   dart pub global activate flutterfire_cli
-   flutterfire configure
-   ```
+```sh
+node scripts/import_legacy_firebase_data.js
+```
 
-   Selecciona el proyecto Firebase y las plataformas requeridas; integra las
-   opciones generadas en `main.dart`. No agregues claves de servidor ni
-   credenciales privadas a Git.
-
-Ejecuta `flutter pub get` y `flutter run`. Inicia sesión en BioMedica,
-   abre **Reportes** y copia el UID de pruebas que aparece debajo del aviso.
-   Si el listado no carga, confirma que Anonymous esté habilitado y que las
-   reglas publicadas coincidan con `firestore.rules`.
-
-Cada documento necesita `ownerUid`, `equipment`, `description`, `priority`,
-`createdAt` y `updatedAt`. Para crear un documento manual, usa el UID de
-pruebas mostrado en **Reportes**, equipo y descripción no vacíos, una prioridad
-permitida y fechas de tipo timestamp. Las reglas impiden lecturas o
-modificaciones entre usuarios y validan el esquema. No uses reglas abiertas en
-una aplicación real.
-
-### Pruebas de interfaz
+El importador conserva los UID históricos, roles y asignaciones; lleva las
+mediciones válidas a PostgreSQL y deja intactos los reportes en Firestore. No
+es posible obtener contraseñas originales desde Firebase. Las cuentas
+importadas reciben hashes de contraseñas aleatorias inutilizables; verifica la
+identidad de cada persona y asigna una nueva contraseña desde una terminal
+administrativa segura:
 
 ```powershell
-flutter test test\reports_screen_test.dart
+node scripts/set_user_password.js usuario@dominio.com
 ```
 
-Los casos de TC01 a TC08 se mantienen en
-`test\reports_screen_test.dart`. Los widget tests usan un repositorio falso
-para pruebas repetibles. Se comprobó en el emulador Android que Firestore
-crea, actualiza y elimina reportes, encuentra el estado vacío de REP999 y
-conserva REP008 después de cerrar y abrir la app. TC03 y TC07 aún no se han
-ejecutado contra Firestore real; el test de TC07 solo simula el error.
+El script no muestra la contraseña en pantalla y no cambia el rol. Haz respaldo
+de Firestore y PostgreSQL antes de migrar. Si una cuenta con el mismo correo ya
+existe en PostgreSQL, detén la migración y resuelve el conflicto antes de
+reintentar; no se sobrescriben cuentas existentes.
 
-La consulta de reportes filtra por UID y ordena en el dispositivo para evitar
-depender de un índice compuesto. Si Firebase Console reporta otro error,
-confirma que Anonymous esté habilitado, que Firestore esté activo y que
-`firestore.rules` esté publicado en `iotprueba-fc74f`.
+### Datos del reloj y límites clínicos
 
-El reporte y las capturas están en [reporte_practica_firestore.html](reporte_practica_firestore.html)
-y [practica_firestore_evidencias](practica_firestore_evidencias/). La captura
-compartida de Firebase Console muestra una fila `REP001`, pero el documento
-seleccionado tiene un ID automático y campos del esquema anterior; por sí sola
-no prueba que el segundo insert se rechazara sin sobrescribir. `firestore.rules`
-está actualizado en el repositorio, pero todavía debe publicarse con Firebase
-CLI y comprobarse en el proyecto; no des por validado el aislamiento de datos
-antes de ese paso.
+El companion `:wear` solicita permiso `BODY_SENSORS` y transmite el pulso
+obtenido con `Sensor.TYPE_HEART_RATE`. Es el dato implementado para Galaxy
+Watch. No todos los relojes exponen SpO₂ o temperatura; solo se guardan si una
+fuente real compatible los proporciona. Las lecturas simuladas no se pueden
+guardar.
 
-## Base de datos relacional planeada
+La app conserva valores y fechas, pero **no genera diagnósticos, alertas
+clínicas ni recomendaciones médicas**. Los límites de captura son validaciones
+técnicas, no umbrales clínicos.
 
-El entregable contempla PostgreSQL como base relacional del backend para los
-datos estructurados compartidos entre la app, el sistema web y el panel de
-turnos. La app móvil accederá a PostgreSQL mediante una API autenticada; no se
-deben incluir credenciales SQL en Flutter. Esta conexión aún no está
-implementada. Los reportes de equipo de la versión actual continúan usando
-Cloud Firestore, como se describe arriba.
+## Práctica 8: evaluación de calidad por caja negra
+
+El reporte está en [HTML](Practica_8_Evaluacion_Caja_Negra.html) y
+[PDF](Practica_8_Evaluacion_Caja_Negra.pdf). Documenta el inventario funcional,
+18 requisitos identificados, entradas, restricciones, resultados esperados,
+casos de prueba, evidencias disponibles y pendientes de verificación. Las
+pruebas locales no sustituyen las comprobaciones contra PostgreSQL/Render,
+Firestore y un Galaxy Watch real. El checklist de migración y pruebas está en
+[CHECKLIST_VALIDACIONES_PRACTICA_8.md](CHECKLIST_VALIDACIONES_PRACTICA_8.md).
 
 ## Versionamiento
 
-La versión Android se declara en `pubspec.yaml`. El hito `1.1.0+2` agrega el
-flujo de reportes Firestore y sus pruebas. Se registra una corrección verificada:
-la consulta dejó de requerir un índice compuesto al ordenar los resultados
-localmente. Los casos TC03 (duplicado real) y TC07 (pérdida real de conexión)
-siguen pendientes de comprobación contra el servicio. El historial y la
-cantidad de correcciones se documentan sin crear versiones o fallos ficticios.
+La versión objetivo es `1.3.0+5` en `pubspec.yaml`. Configura
+`supabase.local.json` al compilar para que la APK conecte Auth/datos con
+Supabase y los reportes con la API de Render:
+
+```powershell
+flutter build apk --release --build-name 1.3.0 --build-number 5 `
+  --dart-define-from-file=supabase.local.json `
+  --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
+```
+
+La APK release está firmada con la clave de
+depuración del proyecto y es para pruebas; Google Play requiere una clave de
+producción.
 
 ## Wear OS y emuladores
 
-Android incluye la app nativa `:wear`, que publica lecturas de muestra cada tres
-segundos por Wearable Data Layer. BioMedica recibe esas lecturas en la pantalla
-Inicio cuando el AVD Wear OS está emparejado y la app del teléfono está abierta.
-Los datos de BioWatch están marcados como demostración y no provienen de un
-sensor biométrico.
+Android incluye el companion nativo `:wear`, que solicita permiso
+`BODY_SENSORS` y transmite las lecturas del sensor de pulso. No inventa valores
+si no existe sensor o permiso. Para que funcione, teléfono y reloj deben estar
+emparejados y tener instalada su aplicación.
 
 1. Inicia los AVD `Medium_Phone` y `Wear_OS_Large_Round`.
 2. En Android Studio, abre **Device Manager** y usa el menú del AVD del teléfono
@@ -215,9 +251,9 @@ sensor biométrico.
    .\gradlew.bat :wear:installDebug
    ```
 
-5. Abre **BioMedica Watch** en el reloj y deja Inicio abierto en el teléfono.
-   La tarjeta de Dispositivo mostrará **BioWatch del emulador conectado** al
-   recibir los datos.
+5. Abre **BioMedica Watch**, concede permiso al sensor y deja la app del
+   teléfono abierta. Un emulador sin sensor no puede validar lecturas reales;
+   la prueba de captura requiere el Galaxy Watch.
 
 ## APK de depuración
 

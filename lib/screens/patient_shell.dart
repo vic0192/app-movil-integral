@@ -7,12 +7,17 @@ import '../bio_medica_colors.dart';
 import '../ble/wearable_bluetooth_service.dart';
 import '../ble/wear_os_data_layer.dart';
 import '../data/biomedica_api.dart';
+import '../data/reminder_repository.dart';
+import '../data/supabase_measurement_repository.dart';
+import '../models/wearable_measurement.dart';
 import '../services/health_home_widget.dart';
+import '../services/local_reminder_scheduler.dart';
 import '../widgets/history_reading_tile.dart';
 import '../widgets/turn_queue_demo.dart';
 import '../widgets/turn_status_hero.dart';
 import '../widgets/vital_indicator_card.dart';
 import 'reports_screen.dart';
+import 'reminder_settings_screen.dart';
 import 'wearable_pairing_sheet.dart';
 
 class PatientShell extends StatefulWidget {
@@ -21,11 +26,15 @@ class PatientShell extends StatefulWidget {
     required this.patientName,
     required this.patientEmail,
     required this.onSignOut,
+    this.isDemo = false,
+    this.measurementRepository,
   });
 
   final String patientName;
   final String patientEmail;
   final VoidCallback onSignOut;
+  final bool isDemo;
+  final MeasurementRepository? measurementRepository;
 
   @override
   State<PatientShell> createState() => _PatientShellState();
@@ -34,6 +43,10 @@ class PatientShell extends StatefulWidget {
 class _PatientShellState extends State<PatientShell> {
   final _api = const BioMedicaApi();
   final _wearableBluetooth = WearableBluetoothService();
+  late final MeasurementRepository _measurementRepository =
+      widget.measurementRepository ?? SupabaseMeasurementRepository();
+  final _reminderRepository = SupabaseReminderRepository();
+  final _reminderScheduler = LocalReminderScheduler();
   final _demoRates = const [72, 75, 71, 78, 76, 73, 77, 74];
   final _demoOxygenSaturation = const [98, 97, 99, 98, 96, 98, 97, 99];
   final _demoTemperatures = const [
@@ -47,21 +60,24 @@ class _PatientShellState extends State<PatientShell> {
     36.7,
   ];
   Timer? _timer;
-  Timer? _wearablePushTimer;
   Timer? _demoTelemetryTimer;
   Timer? _watchFreshnessTimer;
   StreamSubscription<Map<String, dynamic>>? _watchSubscription;
+  StreamSubscription<List<WearableMeasurement>>? _measurementSubscription;
   int _tab = 0;
   int _demoReadingIndex = 0;
   bool _apiAvailable = false;
   bool _demoWearableLinked = false;
-  String? _wearableSyncMessage;
-  String? _lastPushedWearableId;
-  Map<String, Object>? _lastPushedMeasurements;
   int? _watchHeartRate;
   int? _watchOxygenSaturation;
   double? _watchTemperature;
+  String? _watchSource;
+  String? _watchDeviceName;
   DateTime? _watchUpdatedAt;
+  DateTime? _wearableUpdatedAt;
+  List<WearableMeasurement> _savedMeasurements = const [];
+  String? _measurementError;
+  bool _savingMeasurement = false;
   Map<String, dynamic> _telemetry = const {};
   List<Map<String, dynamic>> _history = const [];
 
@@ -83,71 +99,28 @@ class _PatientShellState extends State<PatientShell> {
       const Duration(seconds: 5),
       (_) => _refreshWatchFreshness(),
     );
+    unawaited(_initializeMeasurements());
+    if (!widget.isDemo) unawaited(_restoreReminders());
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _wearablePushTimer?.cancel();
     _demoTelemetryTimer?.cancel();
     _watchFreshnessTimer?.cancel();
     unawaited(_watchSubscription?.cancel());
+    unawaited(_measurementSubscription?.cancel());
     _wearableBluetooth.removeListener(_onWearableChanged);
     _wearableBluetooth.dispose();
     super.dispose();
   }
 
   void _onWearableChanged() {
+    if (_wearableBluetooth.heartRate != null) {
+      _wearableUpdatedAt = DateTime.now();
+    }
     if (mounted) setState(() {});
-    _scheduleWearableTelemetryPush();
     unawaited(_updateHomeWidget());
-  }
-
-  void _scheduleWearableTelemetryPush() {
-    final device = _wearableBluetooth.device;
-    if (!_wearableBluetooth.isConnected || device == null) return;
-    final wearableId = device.remoteId.toString();
-    final measurements = <String, Object>{};
-    final heartRate = _wearableBluetooth.heartRate;
-    final spo2 = _wearableBluetooth.oxygenSaturation;
-    final temperature = _wearableBluetooth.temperature;
-    if (heartRate != null) measurements['heartRate'] = heartRate;
-    if (spo2 != null) measurements['spo2'] = spo2.round();
-    if (temperature != null) measurements['temperature'] = temperature;
-    if (measurements.isEmpty) return;
-
-    if (_lastPushedWearableId != wearableId) {
-      _lastPushedWearableId = wearableId;
-      _lastPushedMeasurements = null;
-    }
-    final lastPushed = _lastPushedMeasurements;
-    if (lastPushed != null &&
-        measurements.length == lastPushed.length &&
-        measurements.entries.every(
-          (entry) => lastPushed[entry.key] == entry.value,
-        )) {
-      return;
-    }
-
-    _wearablePushTimer?.cancel();
-    _wearablePushTimer = Timer(const Duration(milliseconds: 800), () async {
-      final currentDevice = _wearableBluetooth.device;
-      if (!_wearableBluetooth.isConnected ||
-          currentDevice?.remoteId.toString() != wearableId) {
-        return;
-      }
-      try {
-        await _api.pushTelemetry(
-          wearableId: wearableId,
-          measurements: measurements,
-        );
-        _lastPushedMeasurements = Map.of(measurements);
-        _wearableSyncMessage = 'Mediciones enviadas al servidor.';
-      } catch (error) {
-        _wearableSyncMessage = 'Error al enviar mediciones: $error';
-      }
-      if (mounted) setState(() {});
-    });
   }
 
   Future<void> _refresh() async {
@@ -179,11 +152,28 @@ class _PatientShellState extends State<PatientShell> {
       _wearableBluetooth.heartRate != null ||
       _wearableBluetooth.oxygenSaturation != null ||
       _wearableBluetooth.temperature != null ||
+      (_watchIsConnected && _watchHeartRate != null) ||
       (_apiAvailable &&
           !_isDemoTelemetry &&
           (_value('heartRate') > 0 ||
               _value('spo2') > 0 ||
               _decimal('temperature') > 0));
+
+  bool get _canSaveMeasurement =>
+      !widget.isDemo &&
+      !_savingMeasurement &&
+      (_wearableBluetooth.isConnected &&
+              _wearableBluetooth.heartRate != null &&
+              _isRecent(_wearableUpdatedAt) ||
+          _watchIsConnected &&
+              _watchSource == 'wear_os_sensor' &&
+              _watchHeartRate != null);
+
+  bool _isRecent(DateTime? timestamp) {
+    if (timestamp == null) return false;
+    final age = DateTime.now().difference(timestamp);
+    return !age.isNegative && age <= const Duration(minutes: 5);
+  }
 
   bool get _watchIsConnected =>
       _watchUpdatedAt != null &&
@@ -246,13 +236,12 @@ class _PatientShellState extends State<PatientShell> {
     final oxygenSaturation = reading['spo2'];
     final temperature = reading['temperature'];
     final updatedAt = reading['updatedAt'];
+    final source = reading['source'];
     if (heartRate is! num ||
-        oxygenSaturation is! num ||
-        temperature is! num ||
         updatedAt is! num ||
-        heartRate <= 0 ||
-        oxygenSaturation <= 0 ||
-        temperature <= 0) {
+        source != 'wear_os_sensor' ||
+        heartRate < 30 ||
+        heartRate > 220) {
       return;
     }
 
@@ -264,13 +253,112 @@ class _PatientShellState extends State<PatientShell> {
     if (!mounted) return;
     setState(() {
       _watchHeartRate = heartRate.round();
-      _watchOxygenSaturation = oxygenSaturation.round();
-      _watchTemperature = temperature.toDouble();
+      _watchOxygenSaturation = oxygenSaturation is num
+          ? oxygenSaturation.round()
+          : null;
+      _watchTemperature = temperature is num ? temperature.toDouble() : null;
       _watchUpdatedAt = timestamp;
-      _demoWearableLinked = false;
+      _watchSource = source as String;
+      final deviceName = reading['deviceName'];
+      _watchDeviceName = deviceName is String && deviceName.trim().isNotEmpty
+          ? deviceName
+          : 'Wear OS';
     });
-    _demoTelemetryTimer?.cancel();
     unawaited(_updateHomeWidget());
+  }
+
+  Future<void> _initializeMeasurements() async {
+    if (widget.isDemo) return;
+    try {
+      await _measurementRepository.initialize();
+      _measurementSubscription = _measurementRepository
+          .watchMeasurements()
+          .listen(
+            (items) {
+              if (mounted) {
+                setState(() {
+                  _savedMeasurements = items;
+                  _measurementError = null;
+                });
+              }
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              debugPrint('No se pudo consultar el historial: $error');
+              debugPrintStack(stackTrace: stackTrace);
+              if (mounted) setState(() => _measurementError = '$error');
+            },
+          );
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo iniciar el historial de mediciones: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) setState(() => _measurementError = '$error');
+    }
+  }
+
+  Future<void> _saveCurrentMeasurement() async {
+    if (!_canSaveMeasurement) return;
+    final bluetooth = _wearableBluetooth.isConnected;
+    final readingAt = bluetooth ? _wearableUpdatedAt! : _watchUpdatedAt!;
+    final draft = WearableMeasurementDraft(
+      readingAt: readingAt,
+      source: bluetooth ? 'ble_hr' : 'wear_os_sensor',
+      deviceName: bluetooth
+          ? (_wearableBluetooth.deviceName ?? 'Dispositivo BLE')
+          : (_watchDeviceName ?? 'Wear OS'),
+      heartRateBpm: bluetooth
+          ? _wearableBluetooth.heartRate!
+          : _watchHeartRate!,
+      oxygenSaturationPercent: bluetooth
+          ? _wearableBluetooth.oxygenSaturation?.round()
+          : _watchOxygenSaturation,
+      bodyTemperatureCelsius: bluetooth
+          ? _wearableBluetooth.temperature
+          : _watchTemperature,
+    );
+    setState(() => _savingMeasurement = true);
+    try {
+      final id = await _measurementRepository.saveMeasurement(draft);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Medición $id guardada en PostgreSQL.')),
+        );
+      }
+    } on MeasurementStoreException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo guardar la medición: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingMeasurement = false);
+    }
+  }
+
+  Future<void> _openReminderSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const ReminderSettingsScreen()),
+    );
+  }
+
+  Future<void> _restoreReminders() async {
+    try {
+      final medications = await _reminderRepository.loadMedicationReminders();
+      final settings = await _reminderRepository.loadMeasurementSettings();
+      await _reminderScheduler.sync(
+        medications: medications,
+        measurementSettings: settings,
+        requestPermission: false,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('No se pudieron restaurar los recordatorios: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   void _refreshWatchFreshness() {
@@ -388,9 +476,7 @@ class _PatientShellState extends State<PatientShell> {
     );
   }
 
-  Widget _reportsPage() => ReportsScreen(
-    patientName: widget.patientName,
-  );
+  Widget _reportsPage() => ReportsScreen(patientName: widget.patientName);
 
   Widget _home() => _scroll([
     _topBar(),
@@ -424,6 +510,24 @@ class _PatientShellState extends State<PatientShell> {
     _sectionTitle('Dispositivo', action: 'Vincular', onTap: _wearableSheet),
     const SizedBox(height: 9),
     _wearableCard(),
+    const SizedBox(height: 8),
+    FilledButton.icon(
+      key: const ValueKey('saveMeasurement'),
+      onPressed: _canSaveMeasurement ? _saveCurrentMeasurement : null,
+      icon: _savingMeasurement
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.save_alt_rounded),
+      label: const Text('Guardar medición real'),
+    ),
+    const SizedBox(height: 4),
+    const Text(
+      'Solo se guardan lecturas recientes del sensor; los datos de muestra no se registran.',
+      style: TextStyle(color: BioMedicaColors.muted, fontSize: 11),
+    ),
     const SizedBox(height: 20),
     _sectionTitle(
       'Reportes de salud',
@@ -432,7 +536,7 @@ class _PatientShellState extends State<PatientShell> {
     ),
     const SizedBox(height: 9),
     const Text(
-      'Guarda, consulta y administra reportes privados en Firebase.',
+      'Guarda y consulta reportes privados almacenados en Firestore.',
       style: TextStyle(color: BioMedicaColors.muted, fontSize: 12),
     ),
     const SizedBox(height: 20),
@@ -638,7 +742,6 @@ class _PatientShellState extends State<PatientShell> {
         : 'Sin wearable vinculado';
     final subtitle = connected
         ? '${_wearableBluetooth.readings.length} características BLE detectadas'
-              '${_wearableSyncMessage == null ? '' : ' · $_wearableSyncMessage'}'
         : _hasRealData
         ? 'Última sincronización reciente'
         : _watchIsConnected
@@ -795,8 +898,89 @@ class _PatientShellState extends State<PatientShell> {
       _sectionTitle('Registros', action: 'Actualizar', onTap: _refresh),
       const SizedBox(height: 9),
       ...rows.map((entry) => _historyRow(entry, demo)),
+      const SizedBox(height: 18),
+      const Text(
+        'Mediciones guardadas',
+        style: TextStyle(
+          color: BioMedicaColors.ink,
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      const SizedBox(height: 7),
+      if (_measurementError case final error?)
+        Text(
+          'No se pudo cargar el historial de mediciones: $error',
+          style: const TextStyle(color: BioMedicaColors.red, fontSize: 12),
+        )
+      else if (_savedMeasurements.isEmpty)
+        const Text(
+          'Aún no hay mediciones guardadas.',
+          style: TextStyle(color: BioMedicaColors.muted, fontSize: 12),
+        )
+      else
+        ..._savedMeasurements.map(_measurementTile),
+      const SizedBox(height: 9),
+      const Text(
+        'Estas lecturas son datos registrados y no constituyen un diagnóstico médico.',
+        style: TextStyle(color: BioMedicaColors.muted, fontSize: 11),
+      ),
       const SizedBox(height: 20),
     ], label: 'Historial de signos');
+  }
+
+  Widget _measurementTile(WearableMeasurement measurement) {
+    final date = measurement.readingAt.toLocal();
+    final dateText =
+        '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/${date.year} '
+        '${date.hour.toString().padLeft(2, '0')}:'
+        '${date.minute.toString().padLeft(2, '0')}';
+    final optionalVitals = [
+      if (measurement.oxygenSaturationPercent case final spo2?) 'SpO₂ $spo2%',
+      if (measurement.bodyTemperatureCelsius case final temperature?)
+        'Temperatura ${temperature.toStringAsFixed(1)} °C',
+    ];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: BioMedicaColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: BioMedicaColors.line),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.favorite_outline_rounded,
+            color: BioMedicaColors.primary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${measurement.heartRateBpm} BPM'
+                  '${optionalVitals.isEmpty ? '' : ' · ${optionalVitals.join(' · ')}'}',
+                  style: const TextStyle(
+                    color: BioMedicaColors.ink,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '$dateText · ${measurement.deviceName}',
+                  style: const TextStyle(
+                    color: BioMedicaColors.muted,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _historyRow(Map<String, dynamic> entry, bool demo) {
@@ -906,10 +1090,14 @@ class _PatientShellState extends State<PatientShell> {
       'Wearable',
       _demoWearableLinked ? 'BioWatch demo' : 'Sin vincular',
     ),
-    _profileItem(
-      Icons.notifications_none_rounded,
-      'Notificaciones',
-      'Configuración pendiente',
+    OutlinedButton.icon(
+      onPressed: _openReminderSettings,
+      icon: const Icon(Icons.notifications_active_outlined),
+      label: const Text('Medicamentos y recordatorio de medición'),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     ),
     _profileItem(
       Icons.shield_outlined,

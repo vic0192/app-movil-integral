@@ -1,52 +1,106 @@
 package com.example.biomedica_app.wear
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.os.Build
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import java.util.Locale
+import kotlin.math.roundToInt
 
-class MainActivity : Activity() {
-    private val handler = Handler(Looper.getMainLooper())
-    private var readingIndex = 0
-    private var phoneConnected = false
+class MainActivity : Activity(), SensorEventListener {
+    private lateinit var sensorManager: SensorManager
+    private var heartRateSensor: Sensor? = null
     private lateinit var connectionStatus: TextView
+    private lateinit var sensorStatus: TextView
     private lateinit var heartRateValue: TextView
-    private lateinit var oxygenValue: TextView
-    private lateinit var temperatureValue: TextView
-
-    private val demoHeartRates = intArrayOf(72, 75, 71, 78, 76, 73, 77, 74)
-    private val demoOxygen = intArrayOf(98, 97, 99, 98, 96, 98, 97, 99)
-    private val demoTemperatures =
-        doubleArrayOf(36.6, 36.5, 36.7, 36.6, 36.8, 36.5, 36.6, 36.7)
-
-    private val publishTask = object : Runnable {
-        override fun run() {
-            publishReading()
-            handler.postDelayed(this, 3_000)
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildScreen()
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         updatePhoneConnection()
-        handler.post(publishTask)
+        if (heartRateSensor == null) {
+            sensorStatus.text = "Este reloj no ofrece sensor de pulso."
+        } else if (checkSelfPermission(Manifest.permission.BODY_SENSORS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.BODY_SENSORS),
+                REQUEST_BODY_SENSORS,
+            )
+        } else {
+            startHeartRateSensor()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::sensorManager.isInitialized &&
+            checkSelfPermission(Manifest.permission.BODY_SENSORS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            startHeartRateSensor()
+        }
+    }
+
+    override fun onPause() {
+        if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
+        super.onPause()
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(publishTask)
+        if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
         super.onDestroy()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_BODY_SENSORS) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            startHeartRateSensor()
+        } else {
+            sensorStatus.text = "Permite el acceso al sensor para medir el pulso."
+        }
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event?.sensor?.type != Sensor.TYPE_HEART_RATE) return
+        val value = event.values.firstOrNull()?.roundToInt() ?: return
+        if (value !in MIN_HEART_RATE..MAX_HEART_RATE) return
+        heartRateValue.text = "$value BPM"
+        sensorStatus.text = "Lectura actual del sensor del reloj"
+        publishReading(value)
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+    private fun startHeartRateSensor() {
+        val sensor = heartRateSensor
+        if (sensor == null) {
+            sensorStatus.text = "Este reloj no ofrece sensor de pulso."
+            return
+        }
+        sensorStatus.text = "Esperando lectura del sensor..."
+        sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
     }
 
     private fun buildScreen() {
@@ -59,12 +113,7 @@ class MainActivity : Activity() {
 
         content.addView(label("BioMedica", 19, Color.rgb(16, 38, 77), true))
         content.addView(
-            label(
-                "BIOWATCH · DATOS DE MUESTRA",
-                10,
-                Color.rgb(104, 122, 152),
-                true,
-            ),
+            label("MEDICIÓN DEL RELOJ", 10, Color.rgb(104, 122, 152), true),
         )
         content.addView(spacer(12))
         connectionStatus = label("Buscando teléfono...", 11, BLUE, true)
@@ -78,18 +127,21 @@ class MainActivity : Activity() {
             background = rounded(Color.WHITE, 24)
         }
         heartRateValue = label("-- BPM", 25, Color.rgb(209, 74, 84), true)
-        oxygenValue = label("-- % SpO₂", 16, Color.rgb(24, 138, 145), true)
-        temperatureValue = label("-- °C", 16, BLUE, true)
         card.addView(heartRateValue)
-        card.addView(spacer(5))
-        card.addView(oxygenValue)
-        card.addView(spacer(5))
-        card.addView(temperatureValue)
         content.addView(card, centeredParams())
         content.addView(spacer(12))
+        sensorStatus = label(
+            "Esperando permiso y sensor...",
+            10,
+            Color.rgb(104, 122, 152),
+            false,
+        )
+        content.addView(sensorStatus)
+        content.addView(spacer(8))
         content.addView(
             label(
-                "Mantén esta pantalla abierta para enviar datos al teléfono.",
+                "Solo se transmite la frecuencia cardiaca recibida del sensor. "
+                    + "No es un diagnóstico.",
                 10,
                 Color.rgb(104, 122, 152),
                 false,
@@ -99,29 +151,17 @@ class MainActivity : Activity() {
         setContentView(content)
     }
 
-    private fun publishReading() {
-        val index = readingIndex % demoHeartRates.size
-        val heartRate = demoHeartRates[index]
-        val oxygen = demoOxygen[index]
-        val temperature = demoTemperatures[index]
-        heartRateValue.text = "$heartRate BPM"
-        oxygenValue.text = "$oxygen % SpO₂"
-        temperatureValue.text =
-            String.format(Locale.getDefault(), "%.1f °C", temperature)
-        readingIndex++
-        updatePhoneConnection()
-
+    private fun publishReading(heartRate: Int) {
         val request = PutDataMapRequest.create("/biomedica/telemetry").apply {
             dataMap.putInt("heartRate", heartRate)
-            dataMap.putInt("spo2", oxygen)
-            dataMap.putDouble("temperature", temperature)
             dataMap.putLong("updatedAt", System.currentTimeMillis())
-            dataMap.putString("source", "BioWatch Wear OS demo")
+            dataMap.putString("source", "wear_os_sensor")
+            dataMap.putString("deviceName", "${Build.MANUFACTURER} ${Build.MODEL}")
         }.asPutDataRequest().setUrgent()
 
         Wearable.getDataClient(this).putDataItem(request)
             .addOnFailureListener { error ->
-                connectionStatus.text = "Error al enviar: ${error.localizedMessage}"
+                connectionStatus.text = "Error al sincronizar: ${error.localizedMessage}"
                 connectionStatus.setTextColor(Color.rgb(209, 74, 84))
             }
     }
@@ -129,7 +169,7 @@ class MainActivity : Activity() {
     private fun updatePhoneConnection() {
         Wearable.getNodeClient(this).connectedNodes
             .addOnSuccessListener { nodes ->
-                phoneConnected = nodes.isNotEmpty()
+                val phoneConnected = nodes.isNotEmpty()
                 connectionStatus.text =
                     if (phoneConnected) "Teléfono conectado" else "Vincula el reloj al teléfono"
                 connectionStatus.setTextColor(
@@ -137,8 +177,7 @@ class MainActivity : Activity() {
                 )
             }
             .addOnFailureListener { error ->
-                connectionStatus.text =
-                    "No disponible: ${error.localizedMessage}"
+                connectionStatus.text = "No disponible: ${error.localizedMessage}"
                 connectionStatus.setTextColor(Color.rgb(209, 74, 84))
             }
     }
@@ -172,5 +211,8 @@ class MainActivity : Activity() {
 
     companion object {
         private const val BLUE = -15239160
+        private const val REQUEST_BODY_SENSORS = 100
+        private const val MIN_HEART_RATE = 30
+        private const val MAX_HEART_RATE = 220
     }
 }

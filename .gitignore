@@ -32,6 +32,12 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/backend/node_modules/
+.env
+.env.*
+!.env.example
+/supabase.local.json
+*service-account*.json
 
 # Symbolication related
 app.*.symbols

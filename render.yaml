@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: biomedica-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: biomedica-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: PGSSL
+        value: "false"
+databases:
+  - name: biomedica-db
+    databaseName: biomedica
+    user: biomedica
+    plan: basic-256mb

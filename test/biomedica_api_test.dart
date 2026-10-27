@@ -1,20 +1,18 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:biomedica_app/data/biomedica_api.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('pushTelemetry sends only supplied measurements to the API', () async {
+  test('fetchStatus decodes the status response', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final receivedBody = Completer<String>();
+    final requestReceived = Completer<void>();
     server.listen((request) async {
-      final body = await utf8.decoder.bind(request).join();
-      if (!receivedBody.isCompleted) receivedBody.complete(body);
+      if (!requestReceived.isCompleted) requestReceived.complete();
       request.response
         ..statusCode = HttpStatus.ok
-        ..write('{"ok":true}');
+        ..write('{"lastTelemetry":{"heartRate":75},"telemetryHistory":[]}');
       await request.response.close();
     });
 
@@ -22,18 +20,11 @@ void main() {
       final api = BioMedicaApi(
         baseUrl: 'http://${server.address.address}:${server.port}',
       );
-      await api.pushTelemetry(
-        wearableId: 'stf-device',
-        measurements: const {'heartRate': 76},
-      );
+      final status = await api.fetchStatus();
+      await requestReceived.future;
 
-      final payload =
-          jsonDecode(await receivedBody.future) as Map<String, dynamic>;
-      expect(payload['wearableId'], 'stf-device');
-      expect(payload['source'], 'stf-kronos-blaze-ble');
-      expect(payload['heartRate'], 76);
-      expect(payload.containsKey('spo2'), isFalse);
-      expect(payload.containsKey('temperature'), isFalse);
+      expect(status['lastTelemetry'], {'heartRate': 75});
+      expect(status['telemetryHistory'], isEmpty);
     } finally {
       await server.close(force: true);
     }

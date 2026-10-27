@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:biomedica_app/data/firestore_report_repository.dart';
+import 'package:biomedica_app/data/supabase_report_repository.dart';
+import 'package:biomedica_app/models/app_user_profile.dart';
 import 'package:biomedica_app/models/health_report.dart';
 import 'package:biomedica_app/screens/reports_screen.dart';
 import 'package:flutter/material.dart';
@@ -43,6 +44,70 @@ void main() {
     expect(find.text('Escribe el equipo.'), findsOneWidget);
     expect(find.text('Escribe la descripción.'), findsOneWidget);
     expect(repository.reports, isEmpty);
+  });
+
+  testWidgets('TC09 - rechaza equipo y descripción con solo espacios', (
+    tester,
+  ) async {
+    await _pumpScreen(tester, repository);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('newReport')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('reportEquipment')),
+      '   ',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('reportDescription')),
+      '   ',
+    );
+    await tester.tap(find.text('Guardar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Escribe el equipo.'), findsOneWidget);
+    expect(find.text('Escribe la descripción.'), findsOneWidget);
+    expect(repository.reports, isEmpty);
+  });
+
+  testWidgets('TC10 - ID con barra se rechaza con mensaje visible', (
+    tester,
+  ) async {
+    await _pumpScreen(tester, repository);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('newReport')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('reportId')), 'REP/001');
+    await tester.enterText(
+      find.byKey(const ValueKey('reportEquipment')),
+      'Monitor cardiaco',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('reportDescription')),
+      'Falla de encendido',
+    );
+    await tester.tap(find.text('Guardar'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('El ID no puede contener /.'), findsOneWidget);
+    expect(repository.reports, isEmpty);
+  });
+
+  testWidgets('TC11 - longitudes máximas del reporte son incluyentes', (
+    tester,
+  ) async {
+    await _pumpScreen(tester, repository);
+    await tester.pumpAndSettle();
+    await _fillForm(
+      tester,
+      id: 'R' * 100,
+      equipment: 'E' * 100,
+      description: 'D' * 500,
+    );
+
+    expect(repository.reports, hasLength(1));
+    expect(repository.reports.single.id, 'R' * 100);
+    expect(repository.reports.single.equipment, 'E' * 100);
+    expect(repository.reports.single.description, 'D' * 500);
   });
 
   test('TC03 - rechaza guardar dos veces el ID REP001', () async {
@@ -116,7 +181,7 @@ void main() {
     tester,
   ) async {
     repository.createError = const ReportStoreException(
-      'Sin conexión con Firebase. Los cambios no se guardaron.',
+      'Sin conexión con la API. Los cambios no se guardaron.',
     );
     await _pumpScreen(tester, repository);
     await tester.pumpAndSettle();
@@ -127,7 +192,7 @@ void main() {
     );
 
     expect(
-      find.text('Sin conexión con Firebase. Los cambios no se guardaron.'),
+      find.text('Sin conexión con la API. Los cambios no se guardaron.'),
       findsOneWidget,
     );
     expect(repository.reports, isEmpty);
@@ -212,6 +277,9 @@ class _FakeReportRepository implements ReportRepository {
 
   @override
   String? get ownerUid => 'test-owner';
+
+  @override
+  AppRole? get role => AppRole.patient;
 
   @override
   Future<void> initialize() async {}

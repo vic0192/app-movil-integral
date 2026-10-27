@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Práctica 8: Evaluación de calidad de software — BioMedica</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #10264d;
+      --muted: #596b88;
+      --blue: #1858c8;
+      --line: #dce5f2;
+      --pale: #f4f7fc;
+      --green: #176b3a;
+      --amber: #80530c;
+      --red: #a32727;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--pale);
+      color: var(--ink);
+      font: 15px/1.55 "Segoe UI", Arial, sans-serif;
+    }
+    main {
+      max-width: 1120px;
+      margin: 28px auto;
+      padding: 42px 48px;
+      background: white;
+      box-shadow: 0 10px 35px #10264d12;
+    }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { margin-bottom: 8px; font-size: 30px; }
+    h2 {
+      margin-top: 30px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--line);
+      font-size: 21px;
+    }
+    h3 { margin-bottom: 6px; font-size: 16px; }
+    .subtitle, .muted { color: var(--muted); }
+    .cover {
+      display: flex;
+      min-height: 820px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 34px 0;
+      text-align: center;
+    }
+    .cover img { width: 175px; height: 175px; object-fit: contain; }
+    .cover h1 { max-width: 780px; margin: 28px auto 12px; font-size: 32px; }
+    .cover .institution {
+      color: var(--muted);
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    .cover .course { color: var(--blue); font-size: 18px; font-weight: 700; }
+    .cover-details {
+      display: grid;
+      width: min(100%, 590px);
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 26px;
+      margin: 35px auto 20px;
+      text-align: left;
+    }
+    .cover-details div { border-bottom: 1px solid var(--line); padding: 8px 0; }
+    .cover-details dt { color: var(--muted); font-size: 12px; }
+    .cover-details dd { margin: 3px 0 0; font-weight: 700; }
+    .callout {
+      margin: 18px 0;
+      padding: 14px 16px;
+      border-left: 4px solid var(--blue);
+      background: #eaf1ff;
+    }
+    .warning { border-color: #d69320; background: #fff8e9; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      padding: 8px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #eaf1ff; }
+    code { padding: 1px 4px; background: #f1f4f9; overflow-wrap: anywhere; }
+    .status { font-weight: 700; white-space: nowrap; }
+    .verified { color: var(--green); }
+    .documented { color: var(--blue); }
+    .partial { color: var(--amber); }
+    .pending { color: var(--red); }
+    figure { margin: 14px 0 22px; page-break-inside: avoid; }
+    figure img {
+      display: block;
+      width: 100%;
+      max-height: 620px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      background: white;
+    }
+    figcaption { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .evidence-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .evidence-grid figure { margin: 8px 0; }
+    .evidence-grid img { max-height: 440px; }
+    .conclusion { padding: 16px; background: #f4f7fc; border-radius: 8px; }
+    @media print {
+      @page { size: letter landscape; margin: .55in; }
+      body { background: white; font-size: 10pt; }
+      main { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+      .cover { min-height: 9.1in; break-after: page; }
+      .cover img { width: 1.7in; height: 1.7in; }
+      h2 { break-after: avoid; }
+      table { font-size: 8pt; }
+      thead { display: table-header-group; }
+      tr, figure, .callout, .conclusion { break-inside: avoid; }
+      figure img { max-height: 5.2in; }
+      .evidence-grid img { max-height: 3.4in; }
+      a { color: inherit; text-decoration: none; }
+    }
+    @media (max-width: 760px) {
+      main { margin: 0; padding: 24px 18px; }
+      .cover { min-height: 720px; }
+      .cover-details, .evidence-grid { grid-template-columns: 1fr; }
+      table { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="cover">
+    <img src="practica_firestore_evidencias/logo-uteq.png" alt="Logotipo de la Universidad Tecnológica de Querétaro">
+    <div>
+      <div class="institution">UNIVERSIDAD TECNOLÓGICA DE QUERÉTARO</div>
+      <h1>Práctica 8: Evaluación de calidad de software mediante pruebas de caja negra</h1>
+      <div class="subtitle">Casos funcionales, validaciones, consistencia, permisos y manejo de errores</div>
+      <div class="course">Desarrollo Móvil Integral</div>
+    </div>
+    <dl class="cover-details">
+      <div><dt>Alumno</dt><dd>Víctor Emanuel Rodríguez Ochoa</dd></div>
+      <div><dt>Grupo</dt><dd>IDGS14</dd></div>
+      <div><dt>Maestro</dt><dd>Manuel Contreras Castillo</dd></div>
+      <div><dt>Fecha de revisión</dt><dd>23 de octubre de 2026</dd></div>
+      <div><dt>Proyecto</dt><dd>BioMedica Paciente</dd></div>
+      <div><dt>Alcance</dt><dd>PostgreSQL, API, reportes Firestore y mediciones Wear OS</dd></div>
+    </dl>
+  </section>
+
+  <h2>1. Objetivo y alcance</h2>
+  <p>Evaluar, desde entradas y resultados observables, si BioMedica cumple sus
+  funciones principales, valida datos, conserva los reportes y comunica errores.
+  Se revisaron autenticación, navegación por roles, reportes y registro de
+  mediciones Wear OS. Desde la versión <code>1.3.0+5</code>, cuentas, roles,
+  asignaciones y mediciones se gestionan mediante API/PostgreSQL; los reportes
+  siguen en Firestore y solo los consulta el backend.</p>
+  <p>Esta revisión combina los casos automatizados presentes en
+  <code>test/widget_test.dart</code> y <code>test/reports_screen_test.dart</code>,
+  el código de interfaz y reglas, y las capturas previamente guardadas en el
+  repositorio. No se considera que una regla escrita pero no publicada sea una
+  prueba de autorización efectiva en el servicio.</p>
+  <div class="callout warning">
+    <strong>Ejecución de verificación — 23 de octubre de 2026</strong>
+    <ul>
+      <li><strong>Flutter:</strong> 52/52 pruebas aprobadas.</li>
+      <li><strong>API:</strong> 6/6 pruebas aprobadas con base de datos simulada; no se conectó a una instancia PostgreSQL.</li>
+      <li><strong>Análisis:</strong> <code>flutter analyze</code> sin incidencias.</li>
+      <li><strong>Dependencias de producción del backend:</strong> <code>npm audit --omit=dev</code>, 0 vulnerabilidades.</li>
+    </ul>
+    Estas pruebas locales no verifican el despliegue de Render, la base PostgreSQL
+    real, el proyecto Firestore ni un Galaxy Watch. Esos casos no se marcan como
+    aprobados.
+  </div>
+  <p>La inspección encontró que la versión inicial del registro solo comprobaba
+  que el correo contuviera <code>@</code> y que el repositorio de reportes
+  dependía de la validación de la interfaz. En <code>1.2.0+4</code> se incorporaron cuentas,
+  roles, asignaciones y mediciones persistentes; en <code>1.3.0+5</code> esos
+  datos migran a PostgreSQL. La API almacena reportes en Firestore y las reglas
+  deniegan el acceso directo desde clientes. Despliegue, migración de datos y
+  pruebas de autorización real siguen pendientes. El checklist está en
+  <code>CHECKLIST_VALIDACIONES_PRACTICA_8.md</code>.</p>
+
+  <h2>2. Inventario de funcionalidades revisadas</h2>
+  <table>
+    <thead><tr><th>Área</th><th>Entradas</th><th>Salidas y cambios observables</th><th>Estado / limitación conocida</th></tr></thead>
+    <tbody>
+      <tr><td>Acceso / registro</td><td>Correo, nombre de registro y contraseña.</td><td>API valida la cuenta en PostgreSQL; nuevas cuentas inician con rol paciente.</td><td>Implementado en código; URL, secretos y PostgreSQL de Render deben configurarse.</td></tr>
+      <tr><td>Inicio y navegación</td><td>Selección de Inicio, Historial, Reportes, Mi turno y Perfil.</td><td>Cambia el contenido de pantalla; Inicio enlaza a Reportes y Mi turno.</td><td>Un solo perfil visible: paciente. Datos de turno y wearable pueden ser demostrativos.</td></tr>
+      <tr><td>Reportes: crear y consultar</td><td>ID opcional, equipo, descripción y prioridad.</td><td>Alta en colección <code>reportes</code>, lista ordenada por fecha y búsqueda por ID.</td><td>CRUD validado con repositorio simulado; persistencia y errores en Firestore/Render siguen pendientes.</td></tr>
+      <tr><td>Reportes: modificar y eliminar</td><td>Reporte seleccionado y nuevos valores; confirmación de eliminación.</td><td>Actualiza datos o quita el documento de la lista, con mensaje de resultado.</td><td>Pruebas de interfaz con repositorio falso y capturas Android existentes.</td></tr>
+      <tr><td>Acceso a datos</td><td>Token de sesión, rol relacional y UID propietario/asignaciones.</td><td>La API autoriza roles; Firestore conserva solo reportes y no es accesible directamente desde móviles.</td><td>Implementado en código; configuración de Render/Firestore y pruebas cruzadas pendientes.</td></tr>
+      <tr><td>Mediciones Wear OS</td><td>Lectura reciente de frecuencia cardiaca del sensor.</td><td>Paciente guarda valor, hora, dispositivo y fuente en PostgreSQL <code>measurements</code>.</td><td>Código conectado; falta probar con Galaxy Watch físico y API desplegada.</td></tr>
+      <tr><td>Datos de salud opcionales</td><td>SpO₂ o temperatura disponibles desde un sensor compatible.</td><td>Guarda esos campos si la fuente realmente los proporciona.</td><td>No todos los relojes los exponen; no se inventan valores ni diagnósticos.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Criterios de evaluación</h2>
+  <ul>
+    <li><strong>Verificado:</strong> el resultado esperado aparece en una prueba automatizada del flujo o en evidencia visual congruente.</li>
+    <li><strong>Parcial:</strong> existe implementación y/o prueba con sustituto (fake), pero falta confirmación de extremo a extremo contra el servicio real o de una condición límite.</li>
+    <li><strong>Pendiente:</strong> no se encontró evidencia suficiente para afirmar el resultado; no se atribuye aprobación por inspeccionar código solamente.</li>
+    <li>Una prueba negativa se acepta si la entrada inválida deja cero cambios persistidos y presenta el mensaje esperado. Una prueba positiva de alta debe producir exactamente un registro con los campos visibles esperados.</li>
+  </ul>
+
+  <h2>4. Requisitos y casos de caja negra</h2>
+  <p>Los 18 requisitos y sus casos quedan <strong>completados como especificación</strong>:
+  cada uno tiene entradas/restricciones, resultado esperado, criterio de aceptación
+  y estado documental. “Completado” en esta tabla significa que el requisito y
+  su caso están definidos y registrados; no declara que todos hayan aprobado una
+  ejecución contra servicios reales. Los casos TC01–TC11 describen pruebas de
+  reportes; los casos de acceso, mediciones y permisos también incluyen sus
+  escenarios y criterios.</p>
+  <p class="callout warning">La ejecución integral sigue condicionada: los casos
+  que requieren Render/PostgreSQL, Firestore publicado, cuentas reales o un
+  Galaxy Watch permanecen identificados en la sección 6 y en el checklist.</p>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Tipo</th><th>Entrada y restricción</th><th>Resultado / criterio de aceptación medible</th><th>Caso y evidencia / limitación</th><th>Estado del requisito y caso</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>REQ-001</td><td>Operación principal</td>
+        <td>Crear reporte con equipo, descripción no vacíos y prioridad válida.</td>
+        <td>Al guardar una vez aparece un documento con el ID y los tres valores introducidos; el listado muestra exactamente ese reporte.</td>
+        <td>TC01; captura del reporte <code>REP001</code> en Figura 1.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-002</td><td>Operación principal</td>
+        <td>Consultar lista y buscar un ID existente o inexistente; búsqueda sin distinguir mayúsculas.</td>
+        <td>El ID existente queda visible; para un ID sin coincidencia se muestra estado vacío y no se produce excepción.</td>
+        <td>TC06 cubre el resultado inexistente; Figuras 1 y 2 muestran lista y búsqueda vacía.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-003</td><td>Operación principal</td>
+        <td>Editar un reporte existente, cambiando su prioridad a otra opción disponible.</td>
+        <td>Después de guardar, la tarjeta muestra la prioridad nueva y conserva el ID del reporte.</td>
+        <td>TC04 y Figura 3 (prioridad actualizada).</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-004</td><td>Operación principal</td>
+        <td>Solicitar eliminar un reporte y confirmar la acción.</td>
+        <td>Tras confirmar, el ID deja de aparecer y el repositorio queda sin ese registro; cancelar no debe eliminarlo.</td>
+        <td>TC05 comprueba eliminación confirmada; Figura 4 muestra lista vacía posterior.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-005</td><td>Validación</td>
+        <td>Enviar equipo y descripción vacíos o compuestos solo por espacios.</td>
+        <td>Se muestran los mensajes de campo obligatorio y el número de documentos creados permanece en 0.</td>
+        <td>TC02 y captura de formulario vacío en <code>practica_firestore_evidencias/03-formulario.png</code>.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-006</td><td>Validación</td>
+        <td>Introducir equipo de más de 100 caracteres o descripción de más de 500.</td>
+        <td>El formulario rechaza cada campo que exceda su máximo; no debe persistirse el registro.</td>
+        <td>TC11 y las pruebas de <code>health_report_validation_test.dart</code> comprueban límites exactos y excedidos. Falta confirmar el rechazo en la API desplegada.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-007</td><td>Validación</td>
+        <td>Seleccionar prioridad fuera del catálogo Baja, Media o Alta.</td>
+        <td>El usuario solo puede elegir esas tres opciones y la API debe rechazar cualquier otro valor.</td>
+        <td>TC01/TC04 verifican valores permitidos; falta prueba negativa contra la API desplegada.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-008</td><td>Validación</td>
+        <td>Crear un ID que ya existe o intentar incluir una barra <code>/</code>.</td>
+        <td>El ID duplicado se rechaza sin sobrescribir el reporte anterior; una barra no se acepta como ID.</td>
+        <td>TC03 prueba duplicado en repositorio falso y TC10 rechaza la barra en UI; Figura 5 no demuestra rechazo en la API real.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-009</td><td>Persistencia</td>
+        <td>Crear reporte válido, cerrar/reabrir la app y volver a consultar.</td>
+        <td>ID, equipo, descripción y prioridad siguen iguales después de reiniciar; un documento válido no se pierde.</td>
+        <td>TC08 recrea pantalla con fake; Figuras 6 y 7 documentan persistencia real antes/después según el reporte existente.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-010</td><td>Consistencia</td>
+        <td>Editar un reporte existente o eliminar un ID inexistente; comprobar ID y fechas.</td>
+        <td>Editar conserva el ID y <code>createdAt</code>, actualiza <code>updatedAt</code>; borrar ID inexistente no cambia datos y comunica el error.</td>
+        <td>API/repositorio implementan esas restricciones; Figura 8 muestra documento inexistente. No hay aserción automatizada de las dos marcas de tiempo.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-011</td><td>Acceso / validación</td>
+        <td>Correo vacío o mal formado, más de 254 caracteres, contraseña inferior a 8 o superior a 30 y credenciales incorrectas.</td>
+        <td>El formulario y la API validan entradas; PostgreSQL autentica la cuenta y el hash no se expone al cliente.</td>
+        <td>Pruebas automatizadas cubren validación local y API simulada; falta validar contra Render y PostgreSQL.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-012</td><td>Navegación</td>
+        <td>Seleccionar cada uno de los cinco destinos inferiores y abrir Reportes desde la navegación disponible.</td>
+        <td>Se muestra la pantalla correspondiente al destino sin excepción ni pérdida del estado de sesión.</td>
+        <td>Se observan cinco destinos en el shell y Reportes en las capturas; no se encontró prueba que recorra todos los destinos.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-013</td><td>Permisos</td>
+        <td>Consultar, editar o borrar como otro UID o sin sesión autenticada.</td>
+        <td>El servicio deniega acceso a documentos ajenos; no se lee ni modifica información entre propietarios.</td>
+        <td>La API aplica permisos por UID y rol; falta desplegarla y comprobar aislamiento con usuarios distintos.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-014</td><td>Manejo de errores</td>
+        <td>Perder conexión al guardar o recibir error de consulta/configuración de la API.</td>
+        <td>Se muestra mensaje accionable, no se informa éxito falso, el listado ofrece reintento y no se añade dato no guardado.</td>
+        <td>TC07 simula fallo de escritura con fake; la API dispone de estados de error. Falta desconexión real reproducible.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-015</td><td>Reglas de negocio / alcance</td>
+        <td>Registrar cuenta o entrar con credenciales desde la pantalla de acceso.</td>
+        <td>La API valida credenciales y roles en PostgreSQL; cada registro nuevo obtiene rol paciente y no se concede privilegio desde el cliente.</td>
+        <td>Integración incluida en 1.3.0+5; falta probar con la API desplegada.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-016</td><td>Permisos por rol</td>
+        <td>Administrador cambia el rol de una cuenta y asigna pacientes a un médico.</td>
+        <td>El médico consulta únicamente reportes/mediciones de los UID asignados; el administrador consulta todas las cuentas y el paciente solo las propias.</td>
+        <td>Panel y autorización del backend implementados; no se ejecutó prueba cruzada en Render/PostgreSQL.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-017</td><td>Persistencia de mediciones</td>
+        <td>Guardar explícitamente una lectura del sensor de pulso reciente, con autenticación de paciente.</td>
+        <td>Se crea un registro inmutable en PostgreSQL con propietario, hora de lectura, hora de registro, fuente, dispositivo y frecuencia cardiaca; fuente de demostración o lectura vencida se rechazan.</td>
+        <td>Validación de modelo y API incluida; no se probó todavía con reloj Galaxy Watch ni PostgreSQL desplegado.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+      <tr>
+        <td>REQ-018</td><td>Seguridad clínica</td>
+        <td>Consultar valores de frecuencia cardiaca y campos opcionales disponibles.</td>
+        <td>La app presenta los registros sin diagnóstico, alerta clínica ni recomendación automática.</td>
+        <td>Los datos simulados no se guardan; el código no aplica reglas clínicas.</td>
+        <td class="status documented">Completado</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. Evidencias</h2>
+  <p>Las figuras siguientes reutilizan archivos que ya están en el proyecto. Las
+  capturas prueban el estado visual, pero no sustituyen los registros de ejecución
+  de pruebas ni demuestran por sí solas autorización en el servidor.</p>
+  <div class="evidence-grid">
+    <figure>
+      <img src="practica_firestore_evidencias/04-reporte-prueba.png" alt="Reporte REP001 listado en la aplicación">
+      <figcaption>Figura 1. Reporte visible con ID, equipo, descripción y prioridad; evidencia de consulta y alta.</figcaption>
+    </figure>
+    <figure>
+      <img src="practica_firestore_evidencias/10-documento-inexistente.png" alt="Búsqueda de REP999 sin resultados">
+      <figcaption>Figura 2. Búsqueda de ID inexistente: la aplicación informa que no encontró REP999.</figcaption>
+    </figure>
+    <figure>
+      <img src="practica_firestore_evidencias/05-edicion-prioridad.png" alt="Prioridad actualizada a Alta">
+      <figcaption>Figura 3. Prioridad actualizada y visible como Alta.</figcaption>
+    </figure>
+    <figure>
+      <img src="practica_firestore_evidencias/07-eliminado.png" alt="Lista de reportes vacía después de eliminar">
+      <figcaption>Figura 4. Lista sin reportes tras la eliminación confirmada.</figcaption>
+    </figure>
+    <figure>
+      <img src="practica_firestore_evidencias/11-firestore-doble-insert.png" alt="Documento de Firestore usado como evidencia de intento duplicado">
+      <figcaption>Figura 5. La captura de consola muestra documentos con ID automático y esquema anterior; no basta para demostrar que el duplicado fue rechazado sin sobrescribir.</figcaption>
+    </figure>
+    <figure>
+      <img src="practica_firestore_evidencias/08-persistencia-antes.png" alt="Reporte antes de cerrar la aplicación">
+      <figcaption>Figura 6. Evidencia de datos antes de cerrar la app.</figcaption>
+    </figure>
+    <figure>
+      <img src="practica_firestore_evidencias/09-persistencia-despues.png" alt="Reporte después de volver a abrir la aplicación">
+      <figcaption>Figura 7. Evidencia del reporte persistido después de reabrir la app.</figcaption>
+    </figure>
+    <figure>
+      <img src="practica_firestore_evidencias/03-formulario.png" alt="Formulario de reportes">
+      <figcaption>Figura 8. Formulario de reporte utilizado para los casos de entrada y validación.</figcaption>
+    </figure>
+  </div>
+  <p>Las evidencias de acceso de la versión anterior están en
+  <code>practica5_evidencias/</code>: <code>02_campos_vacios.png</code>,
+  <code>03_error_generico.png</code>, <code>04_limite_30_caracteres.png</code>,
+  <code>05_prueba_datos_invalidos.png</code>,
+  <code>06_acceso_simulado_valido.png</code> y
+  <code>07_logcat_sin_credenciales.png</code>.</p>
+
+  <h2>6. Requisitos pendientes de verificar</h2>
+  <ul>
+    <li>Desplegar el servicio API/PostgreSQL en Render, configurar credenciales de Firestore y compilar la APK con la URL pública de la API.</li>
+    <li>Migrar perfiles, roles, asignaciones y mediciones; restablecer contraseñas tras verificar la identidad de los usuarios.</li>
+    <li>Probar login, creación duplicada y permisos de paciente/médico/admin contra Render y PostgreSQL reales.</li>
+    <li>Desplegar reglas que bloquean acceso directo de clientes a Firestore y verificar que el backend aún consulta reportes.</li>
+    <li>Repetir CRUD de reportes, duplicados y persistencia contra Firestore real por medio de la API.</li>
+    <li>Reproducir pérdida real de red durante alta y consulta y confirmar que no se muestra éxito falso.</li>
+    <li>Completar los casos de UI aún no cubiertos: búsqueda positiva, cancelar eliminación y eliminación de un ID inexistente.</li>
+    <li>Instalar companion y app en un Galaxy Watch/teléfono emparejados; comprobar permiso del sensor y persistencia en PostgreSQL real.</li>
+    <li>Probar la actualización de la APK en un dispositivo Android con la URL de API de producción.</li>
+    <li>El proyecto no ha sido validado clínicamente; no usarlo para diagnóstico, alertas ni decisiones médicas.</li>
+  </ul>
+
+  <h2>7. Conclusión y decisión de liberación</h2>
+  <div class="conclusion">
+    <p><strong>Resultado de la ejecución automatizada:</strong> aprobaron 52 de 52
+    pruebas Flutter y 6 de 6 pruebas del backend; el análisis estático pasó y la
+    auditoría de dependencias de producción reportó cero vulnerabilidades.
+    El proyecto cuenta con 18 requisitos documentados y supera el mínimo de la práctica.</p>
+    <p>La evidencia disponible respalda validaciones locales y flujos CRUD con
+    repositorio falso. La aceptación integral de la entrega queda
+    <strong>condicionada</strong>: Render/PostgreSQL no están desplegados desde
+    este entorno, la migración no se ha ejecutado y aún faltan pruebas de roles,
+    red y hardware. Por ello, <strong>no se recomienda liberar para uso
+    clínico</strong> hasta probar la API, las reglas Firestore y el reloj. La aplicación
+    no emite diagnósticos.</p>
+    <p>El resultado <strong>no significa que todos los escenarios de aceptación
+    estén completados</strong>: las suites API usan PostgreSQL simulado y no se
+    desplegó Render. Firestore, roles con usuarios reales, migración, conexión
+    de red y reloj físico siguen pendientes.</p>
+  </div>
+</main>
+</body>
+</html>

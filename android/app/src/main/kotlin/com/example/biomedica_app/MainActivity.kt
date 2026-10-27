@@ -97,13 +97,20 @@ class MainActivity : FlutterActivity(), DataClient.OnDataChangedListener {
                 }
 
                 val data = DataMapItem.fromDataItem(event.dataItem).dataMap
-                val reading = mapOf(
-                    "heartRate" to data.getInt("heartRate"),
-                    "spo2" to data.getInt("spo2"),
-                    "temperature" to data.getDouble("temperature"),
+                val reading = mutableMapOf<String, Any>(
                     "updatedAt" to data.getLong("updatedAt"),
                     "source" to data.getString("source").orEmpty(),
+                    "deviceName" to data.getString("deviceName").orEmpty(),
                 )
+                if (data.containsKey("heartRate")) {
+                    reading["heartRate"] = data.getInt("heartRate")
+                }
+                if (data.containsKey("spo2")) {
+                    reading["spo2"] = data.getInt("spo2")
+                }
+                if (data.containsKey("temperature")) {
+                    reading["temperature"] = data.getDouble("temperature")
+                }
                 latestWearableReading = reading
                 runOnUiThread { wearableEventSink?.success(reading) }
             }

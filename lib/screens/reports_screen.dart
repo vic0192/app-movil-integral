@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../bio_medica_colors.dart';
-import '../data/firestore_report_repository.dart';
+import '../data/api_report_repository.dart';
+import '../data/report_repository.dart';
+import '../models/app_user_profile.dart';
 import '../models/health_report.dart';
 
 class ReportsScreen extends StatefulWidget {
@@ -17,7 +19,7 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   late final ReportRepository _repository =
-      widget.repository ?? FirestoreReportRepository();
+      widget.repository ?? ApiReportRepository();
   final _search = TextEditingController();
   Stream<List<HealthReport>>? _reports;
   String? _initializationError;
@@ -45,8 +47,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (mounted) {
         setState(
           () => _initializationError =
-              'No se pudo iniciar Firestore. Comprueba la configuración '
-              'de Firebase. Detalle: $error',
+              'No se pudo conectar con el servicio de reportes. Detalle: $error',
         );
       }
     }
@@ -119,7 +120,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final ownerUid = _repository.ownerUid;
     if (ownerUid == null) return;
     await Clipboard.setData(ClipboardData(text: ownerUid));
-    if (mounted) _showMessage('UID de Firebase copiado.');
+    if (mounted) _showMessage('ID de cuenta copiado.');
   }
 
   void _showMessage(String message) {
@@ -158,7 +159,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             IconButton.filled(
               key: const ValueKey('newReport'),
               tooltip: 'Nuevo reporte',
-              onPressed: _busy ? null : _openForm,
+              onPressed: _busy || !_canCreate ? null : _openForm,
               icon: const Icon(Icons.add_rounded),
             ),
           ],
@@ -193,6 +194,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     ],
   );
 
+  bool get _canCreate => _repository.role == AppRole.patient;
+
   Widget _ownerCard() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
     decoration: BoxDecoration(
@@ -208,7 +211,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Reportes privados del usuario autenticado.',
+                'Reportes visibles según el rol y las asignaciones de esta cuenta.',
                 style: TextStyle(fontSize: 12),
               ),
               if (_repository.ownerUid case final uid?)
@@ -284,7 +287,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             message: query.isEmpty
                 ? 'Aún no hay reportes. Crea uno para comenzar.'
                 : 'No se encontró el reporte "$query".',
-            action: query.isEmpty
+            action: query.isEmpty && _canCreate
                 ? FilledButton.icon(
                     onPressed: _busy ? null : _openForm,
                     icon: const Icon(Icons.add_rounded),
@@ -382,18 +385,19 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ],
           ),
         ),
-        PopupMenuButton<String>(
-          tooltip: 'Acciones del reporte',
-          enabled: !_busy,
-          onSelected: (action) {
-            if (action == 'edit') _openForm(report);
-            if (action == 'delete') _delete(report);
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('Editar')),
-            PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-          ],
-        ),
+        if (_repository.role != AppRole.doctor)
+          PopupMenuButton<String>(
+            tooltip: 'Acciones del reporte',
+            enabled: !_busy,
+            onSelected: (action) {
+              if (action == 'edit') _openForm(report);
+              if (action == 'delete') _delete(report);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('Editar')),
+              PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+            ],
+          ),
       ],
     ),
   );
@@ -442,8 +446,6 @@ class _ReportFormDialog extends StatefulWidget {
 }
 
 class _ReportFormDialogState extends State<_ReportFormDialog> {
-  static const _priorities = ['Baja', 'Media', 'Alta'];
-
   final _formKey = GlobalKey<FormState>();
   late final _id = TextEditingController(text: widget.report?.id ?? '');
   late final _equipment = TextEditingController(
@@ -475,12 +477,6 @@ class _ReportFormDialogState extends State<_ReportFormDialog> {
     );
   }
 
-  String? _requiredValidator(String? value, String label, int maximum) {
-    if (value?.trim().isEmpty ?? true) return 'Escribe $label.';
-    if (value!.trim().length > maximum) return 'Máximo $maximum caracteres.';
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: Text(widget.report == null ? 'Nuevo reporte' : 'Editar reporte'),
@@ -499,38 +495,31 @@ class _ReportFormDialogState extends State<_ReportFormDialog> {
                   decoration: const InputDecoration(
                     labelText: 'ID (opcional, por ejemplo REP001)',
                   ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.deny(RegExp(r'[/\s]')),
-                  ],
+                  maxLength: HealthReportValidation.maxIdLength,
                   validator: (value) {
-                    if (value?.contains('/') ?? false) {
-                      return 'El ID no puede contener /.';
-                    }
-                    return null;
+                    return HealthReportValidation.id(value);
                   },
                 ),
               TextFormField(
                 key: const ValueKey('reportEquipment'),
                 controller: _equipment,
                 decoration: const InputDecoration(labelText: 'Equipo *'),
-                maxLength: 100,
-                validator: (value) =>
-                    _requiredValidator(value, 'el equipo', 100),
+                maxLength: HealthReportValidation.maxEquipmentLength,
+                validator: HealthReportValidation.equipment,
               ),
               TextFormField(
                 key: const ValueKey('reportDescription'),
                 controller: _description,
                 decoration: const InputDecoration(labelText: 'Descripción *'),
-                maxLength: 500,
+                maxLength: HealthReportValidation.maxDescriptionLength,
                 maxLines: 3,
-                validator: (value) =>
-                    _requiredValidator(value, 'la descripción', 500),
+                validator: HealthReportValidation.description,
               ),
               DropdownButtonFormField<String>(
                 key: const ValueKey('reportPriority'),
                 initialValue: _priority,
                 decoration: const InputDecoration(labelText: 'Prioridad *'),
-                items: _priorities
+                items: HealthReportValidation.priorities
                     .map(
                       (priority) => DropdownMenuItem(
                         value: priority,
