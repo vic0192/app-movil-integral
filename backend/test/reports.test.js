@@ -130,6 +130,21 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${server.address().port}`;
 });
 
+test('serves the confirmation handoff page without caching or leaking the code', async () => {
+  const response = await fetch(
+    `${baseUrl}/auth/confirmed?code=one-time-code&state=signup`,
+  );
+  const page = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /text\/html/);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(page, /Correo confirmado/);
+  assert.match(page, /window\.location\.search \+ window\.location\.hash/);
+  assert.doesNotMatch(page, /one-time-code/);
+});
+
 after(async () => {
   if (server) {
     server.close();

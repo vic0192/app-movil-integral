@@ -9,6 +9,10 @@ class SupabaseConfig {
   );
   static const authRedirectUrl =
       'com.example.biomedica_app://login-callback/';
+  static const emailConfirmationRedirectUrl = String.fromEnvironment(
+    'SUPABASE_EMAIL_CONFIRMATION_REDIRECT_URL',
+    defaultValue: 'https://app-biomedica-web.onrender.com/auth/confirmed',
+  );
 
   static bool get isConfigured => url.isNotEmpty && publishableKey.isNotEmpty;
 

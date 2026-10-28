@@ -40,6 +40,9 @@ class _BioMedicaAppState extends State<BioMedicaApp> {
             if (state.event == AuthChangeEvent.passwordRecovery && mounted) {
               setState(() => _recoveringPassword = true);
             }
+            if (state.event == AuthChangeEvent.signedIn) {
+              unawaited(_restoreSession());
+            }
           });
     }
     unawaited(_restoreSession());

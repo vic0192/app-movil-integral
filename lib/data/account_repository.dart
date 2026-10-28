@@ -87,7 +87,7 @@ class SupabaseAccountRepository implements AccountRepository {
       final response = await supabaseClient.auth.signUp(
         email: email.trim().toLowerCase(),
         password: password,
-        emailRedirectTo: SupabaseConfig.authRedirectUrl,
+        emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
         data: {
           'first_name': firstName.trim(),
           'last_name': lastName.trim(),

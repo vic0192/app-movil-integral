@@ -2,6 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const { randomUUID } = require('node:crypto');
+const { authConfirmationPage } = require('./auth_confirmation_page');
 const {
   hashPassword,
   normalizeEmail,
@@ -36,6 +37,19 @@ function createApp({
     standardHeaders: 'draft-8',
     legacyHeaders: false,
   }));
+
+  app.get('/auth/confirmed', (_request, response) => {
+    response
+      .status(200)
+      .set({
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+        'Referrer-Policy': 'no-referrer',
+        'X-Content-Type-Options': 'nosniff',
+      })
+      .type('html')
+      .send(authConfirmationPage);
+  });
 
   app.get('/health', async (_request, response, next) => {
     try {

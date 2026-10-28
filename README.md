@@ -67,9 +67,19 @@ La app móvil necesita únicamente la clave publicable. Nunca incluyas una clave
 URL y clave publicable de tu proyecto, y aplica la migración
 [20261027000000_health_data.sql](supabase/migrations/20261027000000_health_data.sql)
 desde el SQL Editor de Supabase. Configura los proveedores de correo para
-exigir confirmación y agrega `com.example.biomedica_app://login-callback/` a
-las URL permitidas de Auth para confirmar cuentas y restablecer contraseñas.
-Android e iOS ya registran ese esquema para volver a la app.
+exigir confirmación. En Authentication → URL Configuration, deja como Site URL
+`https://app-biomedica-web.onrender.com/auth/confirmed` y agrega estas dos
+Redirect URLs:
+
+```text
+https://app-biomedica-web.onrender.com/auth/confirmed
+com.example.biomedica_app://login-callback/
+```
+
+La primera muestra la página segura de confirmación en Render y redirige el
+resultado de Supabase a la app; la segunda permite volver directamente a la app
+para restablecer contraseñas. La plantilla de confirmación debe conservar
+`{{ .ConfirmationURL }}`. Android e iOS ya registran el esquema de callback.
 
 En Render, configura `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` en el servicio
 `biomedica-api`, además de sus variables actuales `DATABASE_URL`,
