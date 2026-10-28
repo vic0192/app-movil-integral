@@ -55,7 +55,7 @@ npm test
 ## Acceso y roles
 
 El acceso, los perfiles, las mediciones y los recordatorios usan Supabase Auth
-y PostgreSQL con políticas RLS. Los reportes de equipo se guardan en Firestore
+y PostgreSQL con políticas RLS. Los reportes de malestares se guardan en Firestore
 y se consultan mediante la API de Render, que verifica la sesión de Supabase y
 aplica la identidad del paciente, administrador o médico asignado. Firestore
 no se expone directamente a la app. Las cuentas nuevas empiezan como pacientes

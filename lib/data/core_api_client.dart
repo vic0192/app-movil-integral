@@ -8,21 +8,20 @@ class CoreApiClient {
   CoreApiClient({
     http.Client? client,
     SessionTokenStore? tokenStore,
-    Future<String?> Function()? accessTokenProvider,
+    this.accessTokenProvider,
     String baseUrl = const String.fromEnvironment(
       'BIOMEDICA_CORE_API_URL',
       defaultValue: '',
     ),
   }) : _client = client ?? http.Client(),
        _tokenStore = tokenStore ?? const SecureSessionTokenStore(),
-       _accessTokenProvider = accessTokenProvider,
        _baseUrl = baseUrl.replaceFirst(RegExp(r'/+$'), '');
 
   static final CoreApiClient instance = CoreApiClient();
 
   final http.Client _client;
   final SessionTokenStore _tokenStore;
-  final Future<String?> Function()? _accessTokenProvider;
+  final Future<String?> Function()? accessTokenProvider;
   final String _baseUrl;
 
   Future<String?> readToken() => _tokenStore.readToken();
@@ -62,8 +61,16 @@ class CoreApiClient {
     }
     final uri = Uri.parse('$_baseUrl$path');
     final token = authenticated
-        ? await (_accessTokenProvider?.call() ?? readToken())
+        ? await (accessTokenProvider?.call() ?? readToken())
         : null;
+    if (authenticated &&
+        accessTokenProvider != null &&
+        (token == null || token.isEmpty)) {
+      throw const CoreApiException(
+        'No hay una sesión activa para acceder a la API de BioMedica.',
+        statusCode: 401,
+      );
+    }
     final headers = <String, String>{'Accept': 'application/json'};
     if (body != null) headers['Content-Type'] = 'application/json';
     if (token != null) headers['Authorization'] = 'Bearer $token';

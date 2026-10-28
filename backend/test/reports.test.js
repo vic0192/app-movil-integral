@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const { after, before, test } = require('node:test');
+const jwt = require('jsonwebtoken');
 const { createApp, validateReport, validateReportId } = require('../src/app');
 
 const jwtSecret = 'test-secret-with-at-least-32-bytes-long';
@@ -188,6 +189,16 @@ test('report validation accepts a valid draft', () => {
     }),
     null,
   );
+  assert.equal(
+    validateReport({
+      malestar: 'Otro',
+      otherMalestar: 'Visión borrosa temporal',
+      description: 'Comenzó esta mañana',
+      priority: 'Media',
+      onsetAt: new Date().toISOString(),
+    }),
+    null,
+  );
 });
 
 test('report validation accepts maximum text and ID lengths', () => {
@@ -209,7 +220,15 @@ test('report validation rejects invalid fields and IDs', () => {
       description: 'Falla sintética',
       priority: 'Media',
     }),
-    /equipo/,
+    /malestar/,
+  );
+  assert.match(
+    validateReport({
+      malestar: 'Otro',
+      description: 'Descripción',
+      priority: 'Media',
+    }),
+    /otro malestar/,
   );
   assert.throws(() => validateReportId('REP/001'), /ID del reporte/);
 });
@@ -283,18 +302,26 @@ test('Supabase patient sessions isolate Firestore reports by owner', async () =>
   registerSupabaseUser('supabase-patient-a', 'patient', 'patient-token-a');
   registerSupabaseUser('supabase-patient-b', 'patient', 'patient-token-b');
   const headers = supabaseHeaders('patient-token-a');
+  const onsetAt = new Date(Date.now() - 60_000).toISOString();
   const created = await fetch(`${baseUrl}/api/reports`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       id: 'REP-SUPABASE-001',
-      equipment: 'Equipo sintético',
+      malestar: 'Otro',
+      otherMalestar: 'Visión borrosa temporal',
       description: 'Reporte de integración',
       priority: 'Media',
+      onsetAt,
     }),
   });
+  const createdBody = await created.json();
   assert.equal(created.status, 201);
   assert.equal(reports.get('REP-SUPABASE-001').ownerUid, 'supabase-patient-a');
+  assert.equal(reports.get('REP-SUPABASE-001').malestar, 'Otro');
+  assert.equal(reports.get('REP-SUPABASE-001').otherMalestar, 'Visión borrosa temporal');
+  assert.equal(createdBody.report.malestar, 'Otro');
+  assert.equal(new Date(createdBody.report.onsetAt).toISOString(), onsetAt);
 
   const ownReports = await fetch(`${baseUrl}/api/reports`, { headers });
   const otherReports = await fetch(`${baseUrl}/api/reports`, {
@@ -366,4 +393,25 @@ test('Supabase report API rejects invalid bearer tokens', async () => {
   });
 
   assert.equal(response.status, 401);
+});
+
+test('Supabase reports fall back when a JWT is valid but absent from legacy accounts', async () => {
+  const user = registerSupabaseUser(
+    'supabase-valid-legacy-miss',
+    'patient',
+    'placeholder-supabase-token',
+  );
+  const token = jwt.sign(
+    { sub: user.id },
+    jwtSecret,
+    { issuer: 'biomedica-api', expiresIn: '1h' },
+  );
+  supabaseTokens.delete('placeholder-supabase-token');
+  supabaseTokens.set(token, user);
+  const response = await fetch(`${baseUrl}/api/reports`, {
+    headers: supabaseHeaders(token),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).reports, []);
 });

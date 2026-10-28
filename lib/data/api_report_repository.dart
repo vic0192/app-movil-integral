@@ -13,9 +13,7 @@ class ApiReportRepository implements ReportRepository {
     : _client = client,
       _api =
           api ??
-          CoreApiClient(
-            accessTokenProvider: _sessionTokenProvider(client),
-          );
+          CoreApiClient(accessTokenProvider: _sessionTokenProvider(client));
 
   final CoreApiClient _api;
   final SupabaseClient? _client;
@@ -37,9 +35,44 @@ class ApiReportRepository implements ReportRepository {
     SupabaseClient? client,
   ) {
     return () async {
-      final activeClient = client ??
+      final activeClient =
+          client ??
           (SupabaseConfig.isConfigured ? Supabase.instance.client : null);
-      return activeClient?.auth.currentSession?.accessToken;
+      if (activeClient == null) {
+        throw const CoreApiException(
+          'No se encontró la sesión de Supabase. Inicia sesión nuevamente.',
+          statusCode: 401,
+        );
+      }
+      final session = activeClient.auth.currentSession;
+      if (session == null) {
+        throw const CoreApiException(
+          'No hay una sesión de Supabase activa. Inicia sesión nuevamente.',
+          statusCode: 401,
+        );
+      }
+      final expiresAt = session.expiresAt;
+      final refreshThreshold =
+          DateTime.now().millisecondsSinceEpoch ~/ 1000 + 60;
+      if (expiresAt != null && expiresAt <= refreshThreshold) {
+        try {
+          final refreshed = await activeClient.auth.refreshSession();
+          final accessToken = refreshed.session?.accessToken;
+          if (accessToken == null || accessToken.isEmpty) {
+            throw const CoreApiException(
+              'No se pudo renovar tu sesión de Supabase. Inicia sesión nuevamente.',
+              statusCode: 401,
+            );
+          }
+          return accessToken;
+        } on AuthException catch (error) {
+          throw CoreApiException(
+            'No se pudo renovar tu sesión de Supabase: ${error.message}',
+            statusCode: 401,
+          );
+        }
+      }
+      return session.accessToken;
     };
   }
 
@@ -195,7 +228,12 @@ class ApiReportRepository implements ReportRepository {
 
   void _validateDraft(HealthReportDraft draft) {
     final errors = [
-      HealthReportValidation.equipment(draft.equipment),
+      HealthReportValidation.malestar(draft.malestar ?? draft.equipment),
+      HealthReportValidation.otherMalestar(
+        draft.otherMalestar,
+        draft.malestar ?? draft.equipment,
+      ),
+      if (draft.onsetAt != null) HealthReportValidation.onsetAt(draft.onsetAt!),
       HealthReportValidation.description(draft.description),
       HealthReportValidation.priority(draft.priority),
     ];
@@ -206,16 +244,17 @@ class ApiReportRepository implements ReportRepository {
 
   Map<String, Object> _reportData(HealthReportDraft draft) => {
     'equipment': draft.equipment.trim(),
+    'malestar': (draft.malestar ?? draft.equipment).trim(),
+    if (draft.otherMalestar != null)
+      'otherMalestar': draft.otherMalestar!.trim(),
     'description': draft.description.trim(),
     'priority': draft.priority,
+    'onsetAt': (draft.onsetAt ?? DateTime.now()).toIso8601String(),
   };
 
   ReportStoreException _mapApiError(CoreApiException error) =>
       switch (error.statusCode) {
-        401 => const ReportStoreException(
-          'La sesión venció. Inicia sesión nuevamente.',
-          code: 'unauthenticated',
-        ),
+        401 => ReportStoreException(error.message, code: 'unauthenticated'),
         403 => ReportStoreException(error.message, code: 'permission-denied'),
         null => ReportStoreException(error.message, code: 'unavailable'),
         _ => ReportStoreException(error.message, code: 'api-error'),

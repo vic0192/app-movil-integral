@@ -25,6 +25,7 @@ class PatientShell extends StatefulWidget {
     super.key,
     required this.patientName,
     required this.patientEmail,
+    this.chronicConditions = const [],
     required this.onSignOut,
     this.isDemo = false,
     this.measurementRepository,
@@ -32,6 +33,7 @@ class PatientShell extends StatefulWidget {
 
   final String patientName;
   final String patientEmail;
+  final List<String> chronicConditions;
   final VoidCallback onSignOut;
   final bool isDemo;
   final MeasurementRepository? measurementRepository;
@@ -476,7 +478,10 @@ class _PatientShellState extends State<PatientShell> {
     );
   }
 
-  Widget _reportsPage() => ReportsScreen(patientName: widget.patientName);
+  Widget _reportsPage() => ReportsScreen(
+    patientName: widget.patientName,
+    chronicConditions: widget.chronicConditions,
+  );
 
   Widget _home() => _scroll([
     _topBar(),

@@ -88,6 +88,7 @@ class _BioMedicaAppState extends State<BioMedicaApp> {
       return PatientShell(
         patientName: profile.displayName,
         patientEmail: profile.email,
+        chronicConditions: profile.chronicConditions,
         onSignOut: _signOut,
       );
     }

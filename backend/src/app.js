@@ -280,11 +280,15 @@ function createApp({
       const collection = firestore.collection('reportes');
       const document = id ? collection.doc(validateReportId(id)) : collection.doc();
       const now = new Date();
+      const malestar = (fields.malestar ?? fields.equipment).trim();
       const report = {
-        ...fields,
-        equipment: fields.equipment.trim(),
+        equipment: malestar,
+        malestar,
+        otherMalestar: fields.otherMalestar?.trim() || null,
         description: fields.description.trim(),
+        priority: fields.priority,
         ownerUid: request.user.uid,
+        onsetAt: fields.onsetAt ? new Date(fields.onsetAt) : now,
         createdAt: now,
         updatedAt: now,
       };
@@ -314,10 +318,16 @@ function createApp({
       if (request.user.role !== 'admin' && snapshot.data().ownerUid !== request.user.uid) {
         return response.status(403).json({ message: 'No tienes permiso para modificar este reporte.' });
       }
+      const malestar = (request.body.malestar ?? request.body.equipment).trim();
       await document.update({
-        equipment: request.body.equipment.trim(),
+        equipment: malestar,
+        malestar,
+        otherMalestar: request.body.otherMalestar?.trim() || null,
         description: request.body.description.trim(),
         priority: request.body.priority,
+        onsetAt: request.body.onsetAt
+          ? new Date(request.body.onsetAt)
+          : snapshot.data().onsetAt ?? snapshot.data().createdAt,
         updatedAt: new Date(),
       });
       const updated = await document.get();
@@ -389,7 +399,20 @@ function authenticate({
          GROUP BY u.id`,
         [claims.sub],
       );
-      if (!result.rowCount) return response.status(401).json({ message: 'La sesión ya no está habilitada.' });
+      if (!result.rowCount) {
+        if (isReportRequest(request.path) && supabaseUrl && supabasePublishableKey) {
+          return authenticateSupabase({
+            token: match[1],
+            request,
+            response,
+            next,
+            supabaseUrl,
+            supabasePublishableKey,
+            supabaseFetch,
+          });
+        }
+        return response.status(401).json({ message: 'La sesión ya no está habilitada.' });
+      }
       request.user = publicUser(result.rows[0]);
       next();
     } catch (error) {
@@ -403,6 +426,11 @@ function authenticate({
             supabaseUrl,
             supabasePublishableKey,
             supabaseFetch,
+          });
+        }
+        if (isReportRequest(request.path) && (!supabaseUrl || !supabasePublishableKey)) {
+          return response.status(503).json({
+            message: 'La API de reportes no tiene configurada la autenticación Supabase.',
           });
         }
         return response.status(401).json({ message: 'La sesión venció. Inicia sesión nuevamente.' });
@@ -576,13 +604,26 @@ function validateMeasurement(input, now = Date.now()) {
 }
 
 function validateReport(input) {
-  if (typeof input.equipment !== 'string' || !input.equipment.trim() || textLength(input.equipment.trim()) > 100) {
-    return 'El nombre del equipo debe tener entre 1 y 100 caracteres.';
+  const malestar = input.malestar ?? input.equipment;
+  if (typeof malestar !== 'string' || !malestar.trim() || textLength(malestar.trim()) > 100) {
+    return 'Selecciona o escribe el malestar (máximo 100 caracteres).';
+  }
+  if (malestar.trim().toLowerCase() === 'otro' &&
+      (typeof input.otherMalestar !== 'string' ||
+       !input.otherMalestar.trim() ||
+       textLength(input.otherMalestar.trim()) > 100)) {
+    return 'Describe el otro malestar (máximo 100 caracteres).';
   }
   if (typeof input.description !== 'string' || !input.description.trim() || textLength(input.description.trim()) > 500) {
     return 'La descripción debe tener entre 1 y 500 caracteres.';
   }
   if (!reportPriorities.has(input.priority)) return 'Selecciona una prioridad válida.';
+  if (input.onsetAt != null) {
+    const onsetAt = Date.parse(input.onsetAt);
+    if (!Number.isFinite(onsetAt) || onsetAt > Date.now()) {
+      return 'La fecha de inicio del malestar no es válida.';
+    }
+  }
   return null;
 }
 
@@ -596,17 +637,28 @@ function validateReportId(value) {
 }
 
 function publicReport(id, data) {
-  if (!data || !('equipment' in data) || !('description' in data) || !('priority' in data)) {
+  if (!data || (!('equipment' in data) && !('malestar' in data)) ||
+      !('description' in data) || !('priority' in data)) {
     return null;
   }
   return {
     id,
-    equipment: data.equipment,
+    equipment: data.equipment ?? data.malestar,
+    malestar: data.malestar ?? data.equipment,
+    otherMalestar: data.otherMalestar ?? null,
     description: data.description,
     priority: data.priority,
+    onsetAt: toNullableIsoDate(data.onsetAt),
     createdAt: toIsoDate(data.createdAt),
     updatedAt: toIsoDate(data.updatedAt),
   };
+}
+
+function toNullableIsoDate(value) {
+  if (value == null) return null;
+  if (value && typeof value.toDate === 'function') return value.toDate().toISOString();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function toIsoDate(value) {

@@ -35,6 +35,28 @@ void main() {
       expect(HealthReportValidation.priority('Urgente'), isNotNull);
       expect(HealthReportValidation.priority(''), isNotNull);
     });
+
+    test('requires a detail when Otro malestar is selected', () {
+      expect(HealthReportValidation.malestar('Fiebre'), isNull);
+      expect(HealthReportValidation.otherMalestar('', 'Fiebre'), isNull);
+      expect(
+        HealthReportValidation.otherMalestar('  ', 'Otro'),
+        contains('otro malestar'),
+      );
+      expect(
+        HealthReportValidation.otherMalestar('Visión borrosa', 'Otro'),
+        isNull,
+      );
+    });
+
+    test('rejects a symptom onset time in the future', () {
+      final now = DateTime(2026, 10, 27, 12);
+      expect(
+        HealthReportValidation.onsetAt(now.add(const Duration(minutes: 1)), now: now),
+        contains('futuro'),
+      );
+      expect(HealthReportValidation.onsetAt(now, now: now), isNull);
+    });
   });
 
   group('ApiReportRepository input guards', () {

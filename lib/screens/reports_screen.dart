@@ -3,14 +3,19 @@ import 'package:flutter/services.dart';
 
 import '../bio_medica_colors.dart';
 import '../data/api_report_repository.dart';
-import '../data/report_repository.dart';
 import '../models/app_user_profile.dart';
 import '../models/health_report.dart';
 
 class ReportsScreen extends StatefulWidget {
-  const ReportsScreen({super.key, required this.patientName, this.repository});
+  const ReportsScreen({
+    super.key,
+    required this.patientName,
+    this.chronicConditions = const [],
+    this.repository,
+  });
 
   final String patientName;
+  final List<String> chronicConditions;
   final ReportRepository? repository;
 
   @override
@@ -56,7 +61,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Future<void> _openForm([HealthReport? report]) async {
     final draft = await showDialog<HealthReportDraft>(
       context: context,
-      builder: (_) => _ReportFormDialog(report: report),
+      builder: (_) => _ReportFormDialog(
+        report: report,
+        chronicConditions: widget.chronicConditions,
+      ),
     );
     if (draft == null || !mounted) return;
 
@@ -142,7 +150,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Reportes de equipo',
+                    'Reportes de salud',
                     style: TextStyle(
                       color: BioMedicaColors.ink,
                       fontSize: 24,
@@ -359,7 +367,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 ),
               ),
               Text(
-                report.equipment,
+                report.otherMalestar?.isNotEmpty == true
+                    ? '${report.malestar ?? report.equipment}: ${report.otherMalestar}'
+                    : report.malestar ?? report.equipment,
                 style: const TextStyle(
                   color: BioMedicaColors.ink,
                   fontWeight: FontWeight.w700,
@@ -382,6 +392,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   fontSize: 11,
                 ),
               ),
+              if (report.onsetAt != null)
+                Text(
+                  'Inicio: ${_formatDate(report.onsetAt!)}',
+                  style: const TextStyle(
+                    color: BioMedicaColors.muted,
+                    fontSize: 11,
+                  ),
+                ),
             ],
           ),
         ),
@@ -437,9 +455,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
 }
 
 class _ReportFormDialog extends StatefulWidget {
-  const _ReportFormDialog({required this.report});
+  const _ReportFormDialog({
+    required this.report,
+    required this.chronicConditions,
+  });
 
   final HealthReport? report;
+  final List<String> chronicConditions;
 
   @override
   State<_ReportFormDialog> createState() => _ReportFormDialogState();
@@ -447,32 +469,121 @@ class _ReportFormDialog extends StatefulWidget {
 
 class _ReportFormDialogState extends State<_ReportFormDialog> {
   final _formKey = GlobalKey<FormState>();
-  late final _id = TextEditingController(text: widget.report?.id ?? '');
-  late final _equipment = TextEditingController(
-    text: widget.report?.equipment ?? '',
+  late final _otherMalestar = TextEditingController(
+    text: widget.report?.otherMalestar ?? '',
   );
   late final _description = TextEditingController(
     text: widget.report?.description ?? '',
   );
+  late String _malestar = widget.report?.malestar ??
+      widget.report?.equipment ??
+      'Fiebre';
   late String _priority = widget.report?.priority ?? 'Media';
+  late DateTime _onsetAt = widget.report?.onsetAt ?? DateTime.now();
 
   @override
   void dispose() {
-    _id.dispose();
-    _equipment.dispose();
+    _otherMalestar.dispose();
     _description.dispose();
     super.dispose();
   }
 
+  List<String> get _malestarOptions {
+    final options = <String>{};
+    for (final condition in widget.chronicConditions) {
+      options.addAll(_conditionMalestares[condition] ?? const []);
+    }
+    if (options.isEmpty) options.addAll(HealthReportValidation.malestares);
+    options.add('Otro');
+    final current = widget.report?.malestar ?? widget.report?.equipment;
+    if (current != null) options.add(current);
+    return options.toList(growable: false);
+  }
+
+  static const _conditionMalestares = <String, List<String>>{
+    'Hipertensión arterial': [
+      'Dolor de cabeza',
+      'Mareo',
+      'Palpitaciones',
+      'Hinchazón',
+    ],
+    'Diabetes tipo 2': [
+      'Cansancio',
+      'Cambios en la visión',
+      'Mareo',
+      'Náusea',
+      'Hormigueo o entumecimiento',
+    ],
+    'Asma': ['Falta de aire', 'Tos', 'Opresión en el pecho'],
+    'Enfermedad cardiovascular': [
+      'Falta de aire',
+      'Dolor en el pecho',
+      'Palpitaciones',
+      'Hinchazón',
+      'Mareo',
+    ],
+    'Enfermedad renal crónica': [
+      'Hinchazón',
+      'Cansancio',
+      'Náusea',
+      'Cambios al orinar',
+    ],
+    'Enfermedad tiroidea': [
+      'Cansancio',
+      'Palpitaciones',
+      'Mareo',
+      'Cambios en la visión',
+    ],
+    'EPOC': ['Falta de aire', 'Tos', 'Opresión en el pecho'],
+    'Artritis': ['Dolor articular', 'Hinchazón', 'Rigidez'],
+    'Cáncer': ['Dolor', 'Fiebre', 'Náusea', 'Cansancio'],
+    'Colesterol alto': [],
+  };
+
+  Future<void> _selectOnset() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _onsetAt,
+      firstDate: DateTime(2000),
+      lastDate: now,
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_onsetAt),
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      _onsetAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+    });
+  }
+
   void _submit() {
+    final onsetError = HealthReportValidation.onsetAt(_onsetAt);
+    if (onsetError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(onsetError)),
+      );
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     Navigator.pop(
       context,
       HealthReportDraft(
-        id: _id.text.trim(),
-        equipment: _equipment.text.trim(),
+        id: widget.report?.id ?? '',
+        equipment: _malestar,
         description: _description.text.trim(),
         priority: _priority,
+        malestar: _malestar,
+        otherMalestar: _malestar == 'Otro' ? _otherMalestar.text.trim() : null,
+        onsetAt: _onsetAt,
       ),
     );
   }
@@ -489,24 +600,43 @@ class _ReportFormDialogState extends State<_ReportFormDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.report == null)
-                TextFormField(
-                  key: const ValueKey('reportId'),
-                  controller: _id,
-                  decoration: const InputDecoration(
-                    labelText: 'ID (opcional, por ejemplo REP001)',
-                  ),
-                  maxLength: HealthReportValidation.maxIdLength,
-                  validator: (value) {
-                    return HealthReportValidation.id(value);
-                  },
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.tag),
+                  title: Text('ID automático'),
+                  subtitle: Text('Se asignará al guardar el reporte.'),
                 ),
-              TextFormField(
-                key: const ValueKey('reportEquipment'),
-                controller: _equipment,
-                decoration: const InputDecoration(labelText: 'Equipo *'),
-                maxLength: HealthReportValidation.maxEquipmentLength,
-                validator: HealthReportValidation.equipment,
+              DropdownButtonFormField<String>(
+                key: const ValueKey('reportMalestar'),
+                initialValue: _malestarOptions.contains(_malestar)
+                    ? _malestar
+                    : _malestarOptions.first,
+                decoration: const InputDecoration(labelText: 'Malestar *'),
+                items: _malestarOptions
+                    .map(
+                      (malestar) => DropdownMenuItem(
+                        value: malestar,
+                        child: Text(malestar),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) setState(() => _malestar = value);
+                },
               ),
+              if (_malestar == 'Otro')
+                TextFormField(
+                  key: const ValueKey('reportOtherMalestar'),
+                  controller: _otherMalestar,
+                  decoration: const InputDecoration(
+                    labelText: 'Especifica otro malestar *',
+                  ),
+                  maxLength: HealthReportValidation.maxMalestarLength,
+                  validator: (value) => HealthReportValidation.otherMalestar(
+                    value,
+                    _malestar,
+                  ),
+                ),
               TextFormField(
                 key: const ValueKey('reportDescription'),
                 controller: _description,
@@ -531,6 +661,22 @@ class _ReportFormDialogState extends State<_ReportFormDialog> {
                   if (priority != null) setState(() => _priority = priority);
                 },
               ),
+              ListTile(
+                key: const ValueKey('reportOnsetAt'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('¿Desde cuándo comenzó? *'),
+                subtitle: Text(_formatOnset(_onsetAt)),
+                trailing: const Icon(Icons.calendar_today_outlined),
+                onTap: _selectOnset,
+              ),
+              const Text(
+                'Si presentas dolor de pecho intenso, falta de aire grave o desmayo, busca atención de emergencia. Este reporte no sustituye una valoración médica.',
+                style: TextStyle(fontSize: 12),
+              ),
+              const Text(
+                'La prioridad refleja el impacto que percibes; no es una clasificación médica.',
+                style: TextStyle(fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -547,4 +693,13 @@ class _ReportFormDialogState extends State<_ReportFormDialog> {
       ),
     ],
   );
+
+  String _formatOnset(DateTime date) {
+    final local = date.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$day/$month/${local.year} $hour:$minute';
+  }
 }

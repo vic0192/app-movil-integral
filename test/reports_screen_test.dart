@@ -13,27 +13,27 @@ void main() {
   setUp(() => repository = _FakeReportRepository());
   tearDown(() async => repository.close());
 
-  testWidgets('TC01 - alta válida con ID REP001 y consulta del reporte', (
+  testWidgets('TC01 - alta válida asigna ID automáticamente y consulta', (
     tester,
   ) async {
     await _pumpScreen(tester, repository);
     await tester.pumpAndSettle();
     await _fillForm(
       tester,
-      id: 'REP001',
-      equipment: 'Monitor cardiaco',
+      malestar: 'Fiebre',
       description: 'No enciende la pantalla',
       priority: 'Media',
     );
 
-    expect(find.text('REP001'), findsOneWidget);
-    expect(find.text('Monitor cardiaco'), findsOneWidget);
+    expect(find.text('AUTO001'), findsOneWidget);
+    expect(find.text('Fiebre'), findsWidgets);
     expect(find.text('No enciende la pantalla'), findsOneWidget);
     expect(find.text('Prioridad: Media'), findsOneWidget);
     expect(repository.reports, hasLength(1));
+    expect(repository.reports.single.malestar, 'Fiebre');
   });
 
-  testWidgets('TC02 - rechaza equipo y descripción vacíos', (tester) async {
+  testWidgets('TC02 - rechaza descripción vacía', (tester) async {
     await _pumpScreen(tester, repository);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('newReport')));
@@ -41,20 +41,23 @@ void main() {
     await tester.tap(find.text('Guardar'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Escribe el equipo.'), findsOneWidget);
     expect(find.text('Escribe la descripción.'), findsOneWidget);
     expect(repository.reports, isEmpty);
   });
 
-  testWidgets('TC09 - rechaza equipo y descripción con solo espacios', (
+  testWidgets('TC09 - exige detalle cuando se selecciona Otro', (
     tester,
   ) async {
     await _pumpScreen(tester, repository);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('newReport')));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('reportMalestar')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Otro').last);
+    await tester.pumpAndSettle();
     await tester.enterText(
-      find.byKey(const ValueKey('reportEquipment')),
+      find.byKey(const ValueKey('reportOtherMalestar')),
       '   ',
     );
     await tester.enterText(
@@ -64,56 +67,69 @@ void main() {
     await tester.tap(find.text('Guardar'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Escribe el equipo.'), findsOneWidget);
+    expect(find.text('Escribe el otro malestar.'), findsOneWidget);
     expect(find.text('Escribe la descripción.'), findsOneWidget);
     expect(repository.reports, isEmpty);
   });
 
-  testWidgets('TC10 - ID con barra se rechaza con mensaje visible', (
+  testWidgets('TC10 - las opciones sugeridas consideran padecimientos', (
     tester,
   ) async {
-    await _pumpScreen(tester, repository);
+    await _pumpScreen(
+      tester,
+      repository,
+      chronicConditions: const ['Asma'],
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('newReport')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('reportId')), 'REP/001');
-    await tester.enterText(
-      find.byKey(const ValueKey('reportEquipment')),
-      'Monitor cardiaco',
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('reportDescription')),
-      'Falla de encendido',
-    );
-    await tester.tap(find.text('Guardar'));
+    await tester.tap(find.byKey(const ValueKey('reportMalestar')));
     await tester.pumpAndSettle();
-
-    expect(find.text('El ID no puede contener /.'), findsOneWidget);
-    expect(repository.reports, isEmpty);
+    expect(find.text('Falta de aire'), findsWidgets);
+    expect(find.text('Tos'), findsWidgets);
+    expect(find.text('Dolor articular'), findsNothing);
   });
 
-  testWidgets('TC11 - longitudes máximas del reporte son incluyentes', (
+  testWidgets('TC11 - captura otro malestar y genera ID sin intervención', (
     tester,
   ) async {
     await _pumpScreen(tester, repository);
     await tester.pumpAndSettle();
     await _fillForm(
       tester,
-      id: 'R' * 100,
-      equipment: 'E' * 100,
+      malestar: 'Otro',
+      otherMalestar: 'Visión borrosa temporal',
+      description: 'Comenzó esta mañana',
+    );
+
+    expect(repository.reports.single.id, 'AUTO001');
+    expect(repository.reports.single.otherMalestar, 'Visión borrosa temporal');
+    expect(find.text('Otro: Visión borrosa temporal'), findsOneWidget);
+  });
+
+  testWidgets('TC12 - longitudes máximas del reporte son incluyentes', (
+    tester,
+  ) async {
+    await _pumpScreen(tester, repository);
+    await tester.pumpAndSettle();
+    await _fillForm(
+      tester,
+      malestar: 'Otro',
+      otherMalestar: 'E' * 100,
       description: 'D' * 500,
     );
 
     expect(repository.reports, hasLength(1));
-    expect(repository.reports.single.id, 'R' * 100);
-    expect(repository.reports.single.equipment, 'E' * 100);
+    expect(repository.reports.single.id, 'AUTO001');
+    expect(repository.reports.single.otherMalestar, 'E' * 100);
     expect(repository.reports.single.description, 'D' * 500);
   });
 
   test('TC03 - rechaza guardar dos veces el ID REP001', () async {
     const draft = HealthReportDraft(
       id: 'REP001',
-      equipment: 'Monitor cardiaco',
+      equipment: 'Fiebre',
+      malestar: 'Fiebre',
       description: 'Falla de encendido',
       priority: 'Media',
     );
@@ -187,7 +203,7 @@ void main() {
     await tester.pumpAndSettle();
     await _fillForm(
       tester,
-      equipment: 'Bomba de infusión',
+      malestar: 'Falta de aire',
       description: 'Alarma activa',
     );
 
@@ -216,20 +232,23 @@ void main() {
 
 Future<void> _fillForm(
   WidgetTester tester, {
-  String id = '',
-  required String equipment,
+  String malestar = 'Fiebre',
+  String? otherMalestar,
   required String description,
   String priority = 'Media',
 }) async {
   await tester.tap(find.byKey(const ValueKey('newReport')));
   await tester.pumpAndSettle();
-  if (id.isNotEmpty) {
-    await tester.enterText(find.byKey(const ValueKey('reportId')), id);
+  await tester.tap(find.byKey(const ValueKey('reportMalestar')));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(malestar).last);
+  await tester.pumpAndSettle();
+  if (otherMalestar != null) {
+    await tester.enterText(
+      find.byKey(const ValueKey('reportOtherMalestar')),
+      otherMalestar,
+    );
   }
-  await tester.enterText(
-    find.byKey(const ValueKey('reportEquipment')),
-    equipment,
-  );
   await tester.enterText(
     find.byKey(const ValueKey('reportDescription')),
     description,
@@ -247,12 +266,14 @@ Future<void> _fillForm(
 Future<void> _pumpScreen(
   WidgetTester tester,
   ReportRepository repository,
+  {List<String> chronicConditions = const []}
 ) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
         body: ReportsScreen(
           patientName: 'Paciente de prueba',
+          chronicConditions: chronicConditions,
           repository: repository,
         ),
       ),
@@ -307,11 +328,14 @@ class _FakeReportRepository implements ReportRepository {
       0,
       HealthReport(
         id: id.isEmpty ? 'AUTO001' : id,
-        equipment: draft.equipment,
+        equipment: draft.malestar ?? draft.equipment,
         description: draft.description,
         priority: draft.priority,
         createdAt: now,
         updatedAt: now,
+        malestar: draft.malestar ?? draft.equipment,
+        otherMalestar: draft.otherMalestar,
+        onsetAt: draft.onsetAt,
       ),
     );
     _emit();
@@ -325,11 +349,14 @@ class _FakeReportRepository implements ReportRepository {
     final original = reports[index];
     reports[index] = HealthReport(
       id: id,
-      equipment: draft.equipment,
+      equipment: draft.malestar ?? draft.equipment,
       description: draft.description,
       priority: draft.priority,
       createdAt: original.createdAt,
       updatedAt: DateTime.now(),
+      malestar: draft.malestar ?? draft.equipment,
+      otherMalestar: draft.otherMalestar,
+      onsetAt: draft.onsetAt,
     );
     _emit();
   }
