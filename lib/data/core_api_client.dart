@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -9,19 +10,22 @@ class CoreApiClient {
     http.Client? client,
     SessionTokenStore? tokenStore,
     this.accessTokenProvider,
+    this.accessTokenRefresher,
     String baseUrl = const String.fromEnvironment(
       'BIOMEDICA_CORE_API_URL',
       defaultValue: '',
     ),
   }) : _client = client ?? http.Client(),
        _tokenStore = tokenStore ?? const SecureSessionTokenStore(),
-       _baseUrl = baseUrl.replaceFirst(RegExp(r'/+$'), '');
+       _baseUrl = (baseUrl.isEmpty && kIsWeb ? Uri.base.origin : baseUrl)
+           .replaceFirst(RegExp(r'/+$'), '');
 
   static final CoreApiClient instance = CoreApiClient();
 
   final http.Client _client;
   final SessionTokenStore _tokenStore;
   final Future<String?> Function()? accessTokenProvider;
+  final Future<String?> Function()? accessTokenRefresher;
   final String _baseUrl;
 
   Future<String?> readToken() => _tokenStore.readToken();
@@ -75,14 +79,21 @@ class CoreApiClient {
     if (body != null) headers['Content-Type'] = 'application/json';
     if (token != null) headers['Authorization'] = 'Bearer $token';
 
-    late final http.Response response;
+    late http.Response response;
     try {
-      final request = http.Request(method, uri)..headers.addAll(headers);
-      if (body != null) request.body = jsonEncode(body);
-      final streamed = await _client
-          .send(request)
-          .timeout(const Duration(seconds: 15));
-      response = await http.Response.fromStream(streamed);
+      response = await _send(method, uri, headers, body);
+      if (authenticated &&
+          response.statusCode == 401 &&
+          accessTokenRefresher != null) {
+        final refreshedToken = await accessTokenRefresher!();
+        if (refreshedToken != null &&
+            refreshedToken.isNotEmpty &&
+            refreshedToken != token) {
+          final retryHeaders = Map<String, String>.from(headers)
+            ..['Authorization'] = 'Bearer $refreshedToken';
+          response = await _send(method, uri, retryHeaders, body);
+        }
+      }
     } on TimeoutException {
       throw const CoreApiException(
         'La API tardó demasiado en responder. Inténtalo nuevamente.',
@@ -91,6 +102,8 @@ class CoreApiClient {
       throw CoreApiException(
         'No se pudo conectar con la API: ${error.message}',
       );
+    } on CoreApiException {
+      rethrow;
     }
 
     Map<String, dynamic> decoded = const {};
@@ -109,6 +122,20 @@ class CoreApiClient {
       );
     }
     return decoded;
+  }
+
+  Future<http.Response> _send(
+    String method,
+    Uri uri,
+    Map<String, String> headers,
+    Map<String, Object?>? body,
+  ) async {
+    final request = http.Request(method, uri)..headers.addAll(headers);
+    if (body != null) request.body = jsonEncode(body);
+    final streamed = await _client
+        .send(request)
+        .timeout(const Duration(seconds: 15));
+    return http.Response.fromStream(streamed);
   }
 
   Stream<T> poll<T>(

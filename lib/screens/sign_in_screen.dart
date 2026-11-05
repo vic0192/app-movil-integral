@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../bio_medica_colors.dart';
 import '../data/account_repository.dart';
 import '../models/app_user_profile.dart';
+import '../widgets/app_version_label.dart';
+import 'terms_and_conditions_dialog.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({
@@ -186,6 +188,11 @@ class _SignInScreenState extends State<SignInScreen> {
     }
   }
 
+  Future<void> _acceptTerms(FormFieldState<bool> field) async {
+    final accepted = await showTermsAcceptanceDialog(context);
+    if (mounted && accepted) field.didChange(true);
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
@@ -274,7 +281,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                   textInputAction: TextInputAction.next,
                                   maxLength: _maxNameLength,
                                   decoration: _decoration(
-                                    'Ej. Valeria Mora',
+                                    'Nombre',
                                     Icons.person_outline_rounded,
                                   ).copyWith(counterText: ''),
                                   validator: (value) {
@@ -298,7 +305,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                   textInputAction: TextInputAction.next,
                                   maxLength: _maxLastNameLength,
                                   decoration: _decoration(
-                                    'Ej. García López',
+                                    'Apellidos',
                                     Icons.badge_outlined,
                                   ).copyWith(counterText: ''),
                                   validator: (value) {
@@ -323,7 +330,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                   readOnly: true,
                                   onTap: _pickDateOfBirth,
                                   decoration: _decoration(
-                                    'Selecciona tu fecha de nacimiento',
+                                    'Fecha de nacimiento',
                                     Icons.calendar_month_outlined,
                                   ),
                                   validator: (_) => _dateOfBirth == null
@@ -365,7 +372,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                     textCapitalization:
                                         TextCapitalization.sentences,
                                     decoration: _decoration(
-                                      'Escribe el padecimiento',
+                                      'Otro padecimiento',
                                       Icons.edit_note_rounded,
                                     ).copyWith(counterText: ''),
                                   ),
@@ -380,7 +387,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                 maxLength: 254,
                                 textInputAction: TextInputAction.next,
                                 decoration: _decoration(
-                                  'tu@correo.com',
+                                  'Correo electrónico',
                                   Icons.mail_outline_rounded,
                                 ).copyWith(counterText: ''),
                                 validator: _validateEmail,
@@ -396,7 +403,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                 onFieldSubmitted: (_) => _submit(),
                                 decoration:
                                     _decoration(
-                                          'Mínimo 8 caracteres',
+                                          'Contraseña',
                                           Icons.lock_outline_rounded,
                                         )
                                         .copyWith(
@@ -441,7 +448,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                   maxLength: _maxPasswordLength,
                                   textInputAction: TextInputAction.done,
                                   decoration: _decoration(
-                                    'Repite tu contraseña',
+                                    'Confirmar contraseña',
                                     Icons.lock_outline_rounded,
                                   ).copyWith(counterText: ''),
                                   validator: (value) {
@@ -452,6 +459,65 @@ class _SignInScreenState extends State<SignInScreen> {
                                         ? null
                                         : 'Las contraseñas no coinciden.';
                                   },
+                                ),
+                                const SizedBox(height: 8),
+                                FormField<bool>(
+                                  key: const ValueKey('termsAcceptance'),
+                                  initialValue: false,
+                                  validator: (accepted) => accepted == true
+                                      ? null
+                                      : 'Lee y acepta los términos para continuar.',
+                                  builder: (field) => Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Material(
+                                        color: Colors.transparent,
+                                        child: CheckboxListTile(
+                                          contentPadding: EdgeInsets.zero,
+                                          controlAffinity:
+                                              ListTileControlAffinity.leading,
+                                          value: field.value ?? false,
+                                          onChanged: (selected) {
+                                            if (selected == true) {
+                                              _acceptTerms(field);
+                                            } else {
+                                              field.didChange(false);
+                                            }
+                                          },
+                                          title: const Text(
+                                            'He leído y acepto los términos; autorizo el tratamiento de mis datos de salud.',
+                                            style: TextStyle(fontSize: 13),
+                                          ),
+                                        ),
+                                      ),
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: TextButton(
+                                          onPressed: () => _acceptTerms(field),
+                                          child: const Text(
+                                            'Leer términos y condiciones',
+                                          ),
+                                        ),
+                                      ),
+                                      if (field.errorText != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            left: 12,
+                                            top: 4,
+                                          ),
+                                          child: Text(
+                                            field.errorText!,
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ] else
                                 Align(
@@ -519,6 +585,8 @@ class _SignInScreenState extends State<SignInScreen> {
                       fontSize: 11,
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  const Center(child: AppVersionLabel()),
                 ],
               ),
             ),

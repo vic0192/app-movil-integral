@@ -190,6 +190,83 @@ void main() {
     }
   });
 
+  testWidgets('bloquea el registro si no se aceptan los términos', (
+    tester,
+  ) async {
+    await _openRegistration(tester, acceptTerms: false);
+    await _submitRegistration(tester);
+
+    expect(
+      find.text('Lee y acepta los términos para continuar.'),
+      findsOneWidget,
+    );
+    expect(find.text('Mis signos vitales'), findsNothing);
+  });
+
+  testWidgets('usa placeholders con el nombre del campo, sin ejemplos', (
+    tester,
+  ) async {
+    await _openRegistration(tester, acceptTerms: false);
+
+    for (final entry in {
+      'registrationFirstName': 'Nombre',
+      'registrationLastName': 'Apellidos',
+      'accountEmail': 'Correo electrónico',
+      'accountPassword': 'Contraseña',
+      'confirmPassword': 'Confirmar contraseña',
+    }.entries) {
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(ValueKey(entry.key)),
+                matching: find.byType(TextField),
+              ),
+            )
+            .decoration
+            ?.hintText,
+        entry.value,
+      );
+    }
+  });
+
+  testWidgets('exige llegar al final de términos antes de aceptar', (
+    tester,
+  ) async {
+    await _openRegistration(tester, acceptTerms: false);
+    await tester.ensureVisible(find.text('Leer términos y condiciones'));
+    await tester.tap(find.text('Leer términos y condiciones'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(
+              CheckboxListTile,
+              'Desplázate hasta el final para habilitar la aceptación.',
+            ),
+          )
+          .onChanged,
+      isNull,
+    );
+    await tester.drag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -6000),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(
+              CheckboxListTile,
+              'Confirmo que leí y acepto estos términos y el tratamiento de mis datos de salud.',
+            ),
+          )
+          .onChanged,
+      isNotNull,
+    );
+  });
+
   testWidgets('acepta un correo y contraseña de registro válidos', (
     tester,
   ) async {
@@ -302,12 +379,16 @@ void main() {
       await tester.pumpWidget(_app());
       expect(find.text('Iniciar sesión'), findsOneWidget);
       expect(find.text('Explorar demostración'), findsNothing);
+      expect(find.textContaining('Versión 1.3.1+6'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
 }
 
-Future<void> _openRegistration(WidgetTester tester) async {
+Future<void> _openRegistration(
+  WidgetTester tester, {
+  bool acceptTerms = true,
+}) async {
   await tester.pumpWidget(_app());
   await tester.ensureVisible(find.text('Crear una cuenta'));
   await tester.tap(find.text('Crear una cuenta'));
@@ -340,6 +421,24 @@ Future<void> _openRegistration(WidgetTester tester) async {
     find.byKey(const ValueKey('confirmPassword')),
     'Clave1234',
   );
+  if (acceptTerms) {
+    await tester.ensureVisible(find.text('Leer términos y condiciones'));
+    await tester.tap(find.text('Leer términos y condiciones'));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -6000),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text(
+        'Confirmo que leí y acepto estos términos y el tratamiento de mis datos de salud.',
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Aceptar y volver'));
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> _submitRegistration(WidgetTester tester) async {

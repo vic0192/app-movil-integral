@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
+const path = require('node:path');
 const { after, before, test } = require('node:test');
 const jwt = require('jsonwebtoken');
 const { createApp, validateReport, validateReportId } = require('../src/app');
@@ -124,6 +125,7 @@ before(async () => {
     supabaseUrl: 'https://supabase.example.test',
     supabasePublishableKey: 'test-publishable-key',
     supabaseFetch,
+    webRoot: path.join(__dirname, 'fixtures', 'web'),
   });
   server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -143,6 +145,33 @@ test('serves the confirmation handoff page without caching or leaking the code',
   assert.match(page, /Correo confirmado/);
   assert.match(page, /window\.location\.search \+ window\.location\.hash/);
   assert.doesNotMatch(page, /one-time-code/);
+});
+
+test('serves the web app, same-origin configuration, and SPA routes', async () => {
+  const [home, nestedRoute, config] = await Promise.all([
+    fetch(baseUrl),
+    fetch(`${baseUrl}/patient/reports`),
+    fetch(`${baseUrl}/config.json`),
+  ]);
+  const [homeBody, nestedRouteBody, configBody] = await Promise.all([
+    home.text(),
+    nestedRoute.text(),
+    config.json(),
+  ]);
+
+  assert.equal(home.status, 200);
+  assert.match(home.headers.get('content-type'), /text\/html/);
+  assert.equal(
+    homeBody.trim(),
+    '<!doctype html><title>BioMedica web fixture</title>',
+  );
+  assert.equal(nestedRoute.status, 200);
+  assert.equal(nestedRouteBody, homeBody);
+  assert.equal(config.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(configBody, {
+    supabaseUrl: 'https://supabase.example.test',
+    supabasePublishableKey: 'test-publishable-key',
+  });
 });
 
 after(async () => {

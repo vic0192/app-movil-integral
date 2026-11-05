@@ -13,7 +13,10 @@ class ApiReportRepository implements ReportRepository {
     : _client = client,
       _api =
           api ??
-          CoreApiClient(accessTokenProvider: _sessionTokenProvider(client));
+        CoreApiClient(
+          accessTokenProvider: _sessionTokenProvider(client),
+          accessTokenRefresher: _forceRefreshSessionToken(client),
+        );
 
   final CoreApiClient _api;
   final SupabaseClient? _client;
@@ -73,6 +76,26 @@ class ApiReportRepository implements ReportRepository {
         }
       }
       return session.accessToken;
+    };
+  }
+
+  static Future<String?> Function() _forceRefreshSessionToken(
+    SupabaseClient? client,
+  ) {
+    return () async {
+      final activeClient =
+          client ??
+          (SupabaseConfig.isConfigured ? Supabase.instance.client : null);
+      if (activeClient == null) return null;
+      try {
+        final refreshed = await activeClient.auth.refreshSession();
+        return refreshed.session?.accessToken;
+      } on AuthException catch (error) {
+        throw CoreApiException(
+          'No se pudo renovar tu sesión de Supabase: ${error.message}',
+          statusCode: 401,
+        );
+      }
     };
   }
 

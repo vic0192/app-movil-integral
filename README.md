@@ -66,7 +66,10 @@ La app móvil necesita únicamente la clave publicable. Nunca incluyas una clave
 [supabase.example.json](supabase.example.json) como `supabase.local.json`, pon la
 URL y clave publicable de tu proyecto, y aplica la migración
 [20261027000000_health_data.sql](supabase/migrations/20261027000000_health_data.sql)
-desde el SQL Editor de Supabase. Configura los proveedores de correo para
+y [20261027000001_terms_acceptance.sql](supabase/migrations/20261027000001_terms_acceptance.sql)
+desde el SQL Editor de Supabase. La segunda migración registra de forma no
+editable la versión y fecha de aceptación de términos, y bloquea registros que
+no incluyan el consentimiento vigente. Configura los proveedores de correo para
 exigir confirmación. En Authentication → URL Configuration, deja como Site URL
 `https://app-biomedica-web.onrender.com/auth/confirmed` y agrega estas dos
 Redirect URLs:
@@ -82,7 +85,7 @@ para restablecer contraseñas. La plantilla de confirmación debe conservar
 `{{ .ConfirmationURL }}`. Android e iOS ya registran el esquema de callback.
 
 En Render, configura `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` en el servicio
-`biomedica-api`, además de sus variables actuales `DATABASE_URL`,
+`app-biomedica-web`, además de sus variables actuales `DATABASE_URL`,
 `FIREBASE_SERVICE_ACCOUNT_JSON` y `JWT_SECRET`. La clave publicable también se
 usa del lado del servidor para consultas sujetas al token del usuario; nunca
 uses `service_role` en la app. El backend requiere esas variables para iniciar.
@@ -95,6 +98,30 @@ Copy-Item supabase.example.json supabase.local.json
 flutter run --dart-define-from-file=supabase.local.json `
   --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
 ```
+
+### Aplicación web en Render
+
+El servicio `app-biomedica-web` sirve la versión Flutter en `/` y conserva
+las rutas `/api`, `/health` y `/auth/confirmed`. En Render, conecta el
+repositorio `vic0192/app-movil-integral`, usa la rama `main`, deja vacío
+**Root Directory**, configura **Build Command** como `bash render-build.sh`
+y **Start Command** como `npm --prefix backend start`. El script instala una
+versión fija de Flutter, compila la web y la copia al backend para que ambos se
+sirvan desde el mismo origen. Mantén las variables existentes del servicio y
+la conexión con la base actual; no es necesario crear ni migrar otra base.
+
+La web carga únicamente la URL y la clave **publicable** de Supabase desde
+`/config.json`; nunca expongas `service_role` ni credenciales de base de datos
+en el frontend. Después del despliegue comprueba `/`, `/config.json` y
+`/health`. Para registro y restablecimiento desde la web, agrega la URL raíz
+`https://app-biomedica-web.onrender.com` a **Authentication → URL Configuration
+→ Redirect URLs** en Supabase; conserva también la URL móvil y la ruta
+`/auth/confirmed` que usa la confirmación móvil.
+
+Esta web usa el mismo cliente, tablas y servicios configurados para la app
+móvil. No se crea una base nueva ni se migran datos de otra web; la app usa
+Supabase para cuentas, mediciones y recordatorios, y la API/Firestore actual
+para reportes.
 
 Para registrar el primer administrador, crea y confirma su cuenta y luego
 actualiza su rol desde el SQL Editor de Supabase, sustituyendo el UID por el de

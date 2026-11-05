@@ -48,7 +48,10 @@ class GattCharacteristicReading {
 
 class WearableBluetoothService extends ChangeNotifier {
   WearableBluetoothService() {
-    _scanSubscription = FlutterBluePlus.isScanning.listen((scanning) {
+    final scanState = kIsWeb
+        ? const Stream<bool>.empty()
+        : FlutterBluePlus.isScanning;
+    _scanSubscription = scanState.listen((scanning) {
       _isScanning = scanning;
       _notifyListeners();
     });
@@ -72,7 +75,9 @@ class WearableBluetoothService extends ChangeNotifier {
   double? temperature;
   String? statusMessage;
 
-  Stream<List<ScanResult>> get scanResults => FlutterBluePlus.onScanResults;
+  Stream<List<ScanResult>> get scanResults => kIsWeb
+      ? const Stream<List<ScanResult>>.empty()
+      : FlutterBluePlus.onScanResults;
   bool get isScanning => _isScanning;
   bool get isConnectingToWearable => isConnecting;
   BluetoothDevice? get device => _device;

@@ -1,11 +1,11 @@
 {
-    "name": "biomedica_app",
-    "short_name": "biomedica_app",
+    "name": "BioMedica",
+    "short_name": "BioMedica",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F7FAFF",
     "theme_color": "#1858C8",
-    "description": "A new Flutter project.",
+    "description": "Seguimiento personal de salud, mediciones y recordatorios.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

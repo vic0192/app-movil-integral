@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/app_user_profile.dart';
 import 'supabase_config.dart';
+import 'terms_policy.dart';
 
 abstract interface class AccountRepository {
   Future<AppUserProfile> signIn(String email, String password);
@@ -87,13 +89,17 @@ class SupabaseAccountRepository implements AccountRepository {
       final response = await supabaseClient.auth.signUp(
         email: email.trim().toLowerCase(),
         password: password,
-        emailRedirectTo: SupabaseConfig.emailConfirmationRedirectUrl,
+        emailRedirectTo: kIsWeb
+            ? Uri.base.origin
+            : SupabaseConfig.emailConfirmationRedirectUrl,
         data: {
           'first_name': firstName.trim(),
           'last_name': lastName.trim(),
           'date_of_birth': _dateOnly(dateOfBirth),
           'chronic_conditions': chronicConditions,
           'other_chronic_condition': otherChronicCondition?.trim(),
+          'terms_accepted': true,
+          'terms_version': currentTermsVersion,
         },
       );
       final user = response.user;
@@ -118,7 +124,7 @@ class SupabaseAccountRepository implements AccountRepository {
     try {
       await supabaseClient.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
-        redirectTo: SupabaseConfig.authRedirectUrl,
+        redirectTo: kIsWeb ? Uri.base.origin : SupabaseConfig.authRedirectUrl,
       );
     } on AuthException catch (error) {
       throw AccountRepositoryException(_authMessage(error));

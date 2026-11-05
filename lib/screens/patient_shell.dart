@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../bio_medica_colors.dart';
@@ -87,14 +88,16 @@ class _PatientShellState extends State<PatientShell> {
   void initState() {
     super.initState();
     _wearableBluetooth.addListener(_onWearableChanged);
-    _watchSubscription = WearOsDataLayer.readings.listen(
-      _onWatchReading,
-      onError: (Object error, StackTrace stackTrace) {
-        debugPrint('No se pudieron recibir datos de BioWatch: $error');
-        debugPrintStack(stackTrace: stackTrace);
-      },
-    );
-    unawaited(_loadLatestWatchReading());
+    if (!kIsWeb) {
+      _watchSubscription = WearOsDataLayer.readings.listen(
+        _onWatchReading,
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('No se pudieron recibir datos de BioWatch: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        },
+      );
+      unawaited(_loadLatestWatchReading());
+    }
     _refresh();
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _refresh());
     _watchFreshnessTimer = Timer.periodic(

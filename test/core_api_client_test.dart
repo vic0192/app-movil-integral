@@ -76,6 +76,48 @@ void main() {
     },
   );
 
+  test('refreshes a Supabase token once after an API 401', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final authorizations = <String?>[];
+    var requestCount = 0;
+    server.listen((request) async {
+      final authorization = request.headers.value(
+        HttpHeaders.authorizationHeader,
+      );
+      authorizations.add(authorization);
+      final isFresh = requestCount++ > 0;
+      request.response
+        ..statusCode = isFresh ? HttpStatus.ok : HttpStatus.unauthorized
+        ..headers.contentType = ContentType.json
+        ..write(
+          jsonEncode(
+            isFresh ? {'reports': []} : {'message': 'La sesión venció.'},
+          ),
+        );
+      await request.response.close();
+    });
+    var refreshCalls = 0;
+    final client = CoreApiClient(
+      baseUrl: 'http://${server.address.address}:${server.port}',
+      accessTokenProvider: () async => 'stale-session-token',
+      accessTokenRefresher: () async {
+        refreshCalls++;
+        return 'refreshed-session-token';
+      },
+    );
+
+    try {
+      final result = await client.get('/api/reports');
+
+      expect(result, {'reports': []});
+      expect(refreshCalls, 1);
+      expect(authorizations, hasLength(2));
+      expect(authorizations[0], isNot(authorizations[1]));
+    } finally {
+      await server.close(force: true);
+    }
+  });
+
   test(
     'restores the relational account profile from its saved session',
     () async {

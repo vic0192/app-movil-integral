@@ -1,6 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { authConfirmationPage } = require('./auth_confirmation_page');
 const {
@@ -22,6 +23,7 @@ function createApp({
   supabaseUrl = process.env.SUPABASE_URL,
   supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY,
   supabaseFetch = globalThis.fetch,
+  webRoot = path.join(__dirname, '..', 'public'),
 }) {
   if (!pool || !firestore || !jwtSecret || Buffer.byteLength(jwtSecret) < 32) {
     throw new Error('La API requiere PostgreSQL, Firestore y un JWT_SECRET de al menos 32 bytes.');
@@ -37,6 +39,20 @@ function createApp({
     standardHeaders: 'draft-8',
     legacyHeaders: false,
   }));
+
+  app.get('/config.json', (_request, response) => {
+    if (!supabaseUrl || !supabasePublishableKey) {
+      return response.status(503).json({
+        message: 'La configuración de Supabase no está disponible.',
+      });
+    }
+    response
+      .set('Cache-Control', 'no-store')
+      .json({
+        supabaseUrl,
+        supabasePublishableKey,
+      });
+  });
 
   app.get('/auth/confirmed', (_request, response) => {
     response
@@ -369,6 +385,20 @@ function createApp({
       if (error instanceof InputError) return response.status(400).json({ message: error.message });
       next(error);
     }
+  });
+
+  app.use(express.static(webRoot, { index: false }));
+  app.use((request, response, next) => {
+    if (
+      request.method !== 'GET' ||
+      request.path === '/api' ||
+      request.path.startsWith('/api/')
+    ) {
+      return next();
+    }
+    response.sendFile(path.join(webRoot, 'index.html'), (error) => {
+      if (error) next(error);
+    });
   });
 
   app.use((error, _request, response, _next) => {
