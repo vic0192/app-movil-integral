@@ -323,6 +323,59 @@ test('patient completes report create, read, update, and delete over HTTP', asyn
   assert.equal(reports.has(draft.id), false);
 });
 
+test('report creation is idempotent for a matching ID and rejects changed payloads', async () => {
+  const patient = await registerPatient('report-idempotency@example.com');
+  const headers = authHeaders(patient.token);
+  const draft = {
+    id: '00000000-0000-4000-8000-000000000001',
+    malestar: 'Fiebre',
+    description: 'Prueba de reintento',
+    priority: 'Media',
+    onsetAt: '2026-11-05T18:25:00.000Z',
+  };
+  const create = () => fetch(`${baseUrl}/api/reports`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(draft),
+  });
+
+  const first = await create();
+  const firstBody = await first.json();
+  const retry = await create();
+  const retryBody = await retry.json();
+
+  assert.equal(first.status, 201);
+  assert.equal(retry.status, 200);
+  assert.equal(retryBody.report.id, firstBody.report.id);
+  assert.equal(reports.has(draft.id), true);
+  assert.equal(
+    new Date(retryBody.report.onsetAt).toISOString(),
+    draft.onsetAt,
+  );
+  assert.equal(
+    [...reports.values()].filter((report) => report.ownerUid === patient.user.uid)
+      .length,
+    1,
+  );
+
+  const changedPayload = await fetch(`${baseUrl}/api/reports`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ...draft, description: 'Contenido diferente' }),
+  });
+  assert.equal(changedPayload.status, 409);
+  assert.equal(reports.get(draft.id).description, draft.description);
+
+  const otherPatient = await registerPatient('report-idempotency-other@example.com');
+  const crossOwnerRetry = await fetch(`${baseUrl}/api/reports`, {
+    method: 'POST',
+    headers: authHeaders(otherPatient.token),
+    body: JSON.stringify(draft),
+  });
+  assert.equal(crossOwnerRetry.status, 409);
+  assert.equal(reports.get(draft.id).ownerUid, patient.user.uid);
+});
+
 test('report API rejects invalid and unauthenticated operations without writes', async () => {
   const session = await registerPatient('report-errors@example.com');
   const invalid = await fetch(`${baseUrl}/api/reports`, {

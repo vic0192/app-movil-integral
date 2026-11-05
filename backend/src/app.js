@@ -305,13 +305,15 @@ function createApp({
   app.post('/api/reports', requireRole('patient'), async (request, response, next) => {
     const validation = validateReport(request.body ?? {});
     if (validation) return response.status(400).json({ message: validation });
+    let document;
+    let report;
     try {
       const { id, ...fields } = request.body;
       const collection = firestore.collection('reportes');
-      const document = id ? collection.doc(validateReportId(id)) : collection.doc();
+      document = id ? collection.doc(validateReportId(id)) : collection.doc();
       const now = new Date();
       const malestar = (fields.malestar ?? fields.equipment).trim();
-      const report = {
+      report = {
         equipment: malestar,
         malestar,
         otherMalestar: fields.otherMalestar?.trim() || null,
@@ -326,6 +328,15 @@ function createApp({
       response.status(201).json({ report: publicReport(document.id, report) });
     } catch (error) {
       if (error.code === 6 || error.code === 'already-exists') {
+        if (document && report) {
+          const existing = await document.get();
+          const existingReport = existing.exists ? existing.data() : null;
+          if (sameReport(existingReport, report)) {
+            return response.status(200).json({
+              report: publicReport(document.id, existingReport),
+            });
+          }
+        }
         return response.status(409).json({ message: `Ya existe el reporte "${request.body.id}".` });
       }
       if (error instanceof InputError) {
@@ -696,6 +707,17 @@ function publicReport(id, data) {
     createdAt: toIsoDate(data.createdAt),
     updatedAt: toIsoDate(data.updatedAt),
   };
+}
+
+function sameReport(existing, incoming) {
+  return existing != null &&
+    existing.ownerUid === incoming.ownerUid &&
+    existing.equipment === incoming.equipment &&
+    existing.malestar === incoming.malestar &&
+    existing.otherMalestar === incoming.otherMalestar &&
+    existing.description === incoming.description &&
+    existing.priority === incoming.priority &&
+    toNullableIsoDate(existing.onsetAt) === incoming.onsetAt.toISOString();
 }
 
 function toNullableIsoDate(value) {
