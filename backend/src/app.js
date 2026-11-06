@@ -276,6 +276,11 @@ function createApp({
   });
 
   app.get('/api/reports', async (request, response, next) => {
+    if (request.user.role === 'admin') {
+      return response.status(403).json({
+        message: 'El administrador no tiene acceso al contenido clínico de los reportes.',
+      });
+    }
     try {
       const collection = firestore.collection('reportes');
       let query = collection;
@@ -347,8 +352,10 @@ function createApp({
   });
 
   app.put('/api/reports/:id', async (request, response, next) => {
-    if (request.user.role === 'doctor') {
-      return response.status(403).json({ message: 'Los médicos pueden consultar reportes, pero no modificarlos.' });
+    if (request.user.role !== 'patient') {
+      return response.status(403).json({
+        message: 'Solo el paciente propietario puede modificar su reporte.',
+      });
     }
     const validation = validateReport(request.body ?? {});
     if (validation) return response.status(400).json({ message: validation });
@@ -356,7 +363,7 @@ function createApp({
       const document = firestore.collection('reportes').doc(validateReportId(request.params.id));
       const snapshot = await document.get();
       if (!snapshot.exists) return response.status(404).json({ message: `No existe el reporte "${request.params.id}".` });
-      if (request.user.role !== 'admin' && snapshot.data().ownerUid !== request.user.uid) {
+      if (snapshot.data().ownerUid !== request.user.uid) {
         return response.status(403).json({ message: 'No tienes permiso para modificar este reporte.' });
       }
       const malestar = (request.body.malestar ?? request.body.equipment).trim();
@@ -380,14 +387,16 @@ function createApp({
   });
 
   app.delete('/api/reports/:id', async (request, response, next) => {
-    if (request.user.role === 'doctor') {
-      return response.status(403).json({ message: 'Los médicos pueden consultar reportes, pero no eliminarlos.' });
+    if (request.user.role !== 'patient') {
+      return response.status(403).json({
+        message: 'Solo el paciente propietario puede eliminar su reporte.',
+      });
     }
     try {
       const document = firestore.collection('reportes').doc(validateReportId(request.params.id));
       const snapshot = await document.get();
       if (!snapshot.exists) return response.status(404).json({ message: `No existe el reporte "${request.params.id}".` });
-      if (request.user.role !== 'admin' && snapshot.data().ownerUid !== request.user.uid) {
+      if (snapshot.data().ownerUid !== request.user.uid) {
         return response.status(403).json({ message: 'No tienes permiso para eliminar este reporte.' });
       }
       await document.delete();
@@ -698,6 +707,7 @@ function publicReport(id, data) {
   }
   return {
     id,
+    ...(typeof data.ownerUid === 'string' ? { ownerUid: data.ownerUid } : {}),
     equipment: data.equipment ?? data.malestar,
     malestar: data.malestar ?? data.equipment,
     otherMalestar: data.otherMalestar ?? null,

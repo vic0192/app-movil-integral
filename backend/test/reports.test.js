@@ -477,11 +477,40 @@ test('Supabase doctors can read assigned patients only and cannot create reports
     }),
   });
 
-  assert.deepEqual((await listed.json()).reports.map((report) => report.id), [
-    'REP-ASSIGNED',
-  ]);
+  const listedBody = await listed.json();
+  assert.deepEqual(listedBody.reports.map((report) => report.id), ['REP-ASSIGNED']);
+  assert.equal(listedBody.reports[0].ownerUid, 'supabase-patient-assigned');
   assert.equal(create.status, 403);
   assert.equal(reports.has('REP-DOCTOR-001'), false);
+});
+
+test('Supabase administrators cannot read or alter clinical report content', async () => {
+  registerSupabaseUser('supabase-admin-no-clinical-access', 'admin', 'admin-token');
+  reports.set('REP-ADMIN-PRIVATE', {
+    ownerUid: 'supabase-patient-a',
+    equipment: 'Equipo privado',
+    description: 'Dato clínico privado',
+    priority: 'Media',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const listed = await fetch(`${baseUrl}/api/reports`, {
+    headers: supabaseHeaders('admin-token'),
+  });
+  const updated = await fetch(`${baseUrl}/api/reports/REP-ADMIN-PRIVATE`, {
+    method: 'PUT',
+    headers: supabaseHeaders('admin-token'),
+    body: JSON.stringify({
+      equipment: 'Cambio no autorizado',
+      description: 'No permitido',
+      priority: 'Alta',
+    }),
+  });
+
+  assert.equal(listed.status, 403);
+  assert.equal(updated.status, 403);
+  assert.equal(reports.get('REP-ADMIN-PRIVATE').description, 'Dato clínico privado');
 });
 
 test('Supabase report API rejects invalid bearer tokens', async () => {
