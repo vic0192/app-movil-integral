@@ -11,6 +11,7 @@ const reports = new Map();
 const supabaseUsers = new Map();
 const supabaseTokens = new Map();
 const doctorAssignments = new Map();
+const doctorCredentials = new Map();
 let server;
 let baseUrl;
 
@@ -109,6 +110,11 @@ async function supabaseFetch(url, options) {
   if (parsedUrl.pathname === '/rest/v1/profiles') {
     const profile = supabaseUsers.get(parsedUrl.searchParams.get('id')?.slice(3));
     return Response.json(profile ? [profile] : []);
+  }
+  if (parsedUrl.pathname === '/rest/v1/doctor_credentials') {
+    const uid = parsedUrl.searchParams.get('doctor_uid')?.slice(3);
+    const credentials = doctorCredentials.get(uid);
+    return Response.json(credentials ? [credentials] : []);
   }
   if (parsedUrl.pathname === '/rest/v1/doctor_patient_assignments') {
     const uid = parsedUrl.searchParams.get('doctor_uid')?.slice(3);
@@ -220,7 +226,11 @@ function registerSupabaseUser(uid, role, token) {
     first_name: 'Usuario',
     last_name: 'Prueba',
     email: user.email,
+    is_active: true,
   });
+  if (role === 'doctor') {
+    doctorCredentials.set(uid, { verification_status: 'pending' });
+  }
   return user;
 }
 
@@ -445,6 +455,7 @@ test('Supabase doctors can read assigned patients only and cannot create reports
   registerSupabaseUser('supabase-patient-assigned', 'patient', 'assigned-patient-token');
   registerSupabaseUser('supabase-patient-unassigned', 'patient', 'unassigned-patient-token');
   registerSupabaseUser('supabase-doctor', 'doctor', 'doctor-token');
+  doctorCredentials.set('supabase-doctor', { verification_status: 'verified' });
   doctorAssignments.set('supabase-doctor', ['supabase-patient-assigned']);
   reports.set('REP-ASSIGNED', {
     ownerUid: 'supabase-patient-assigned',
@@ -484,7 +495,7 @@ test('Supabase doctors can read assigned patients only and cannot create reports
   assert.equal(reports.has('REP-DOCTOR-001'), false);
 });
 
-test('Supabase administrators cannot read or alter clinical report content', async () => {
+test('Supabase administrators can read reports but cannot alter clinical report content', async () => {
   registerSupabaseUser('supabase-admin-no-clinical-access', 'admin', 'admin-token');
   reports.set('REP-ADMIN-PRIVATE', {
     ownerUid: 'supabase-patient-a',
@@ -507,10 +518,35 @@ test('Supabase administrators cannot read or alter clinical report content', asy
       priority: 'Alta',
     }),
   });
+  const deleted = await fetch(`${baseUrl}/api/reports/REP-ADMIN-PRIVATE`, {
+    method: 'DELETE',
+    headers: supabaseHeaders('admin-token'),
+  });
 
-  assert.equal(listed.status, 403);
+  assert.equal(listed.status, 200);
+  assert.equal(
+    (await listed.json()).reports.some((report) => report.id === 'REP-ADMIN-PRIVATE'),
+    true,
+  );
   assert.equal(updated.status, 403);
+  assert.equal(deleted.status, 403);
   assert.equal(reports.get('REP-ADMIN-PRIVATE').description, 'Dato clínico privado');
+});
+
+test('Supabase blocks inactive users and doctors without admin verification', async () => {
+  registerSupabaseUser('supabase-inactive-patient', 'patient', 'inactive-patient-token');
+  supabaseUsers.get('supabase-inactive-patient').is_active = false;
+  registerSupabaseUser('supabase-unverified-doctor', 'doctor', 'unverified-doctor-token');
+
+  const inactive = await fetch(`${baseUrl}/api/reports`, {
+    headers: supabaseHeaders('inactive-patient-token'),
+  });
+  const unverified = await fetch(`${baseUrl}/api/reports`, {
+    headers: supabaseHeaders('unverified-doctor-token'),
+  });
+
+  assert.equal(inactive.status, 403);
+  assert.equal(unverified.status, 403);
 });
 
 test('Supabase report API rejects invalid bearer tokens', async () => {

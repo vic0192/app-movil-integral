@@ -276,11 +276,6 @@ function createApp({
   });
 
   app.get('/api/reports', async (request, response, next) => {
-    if (request.user.role === 'admin') {
-      return response.status(403).json({
-        message: 'El administrador no tiene acceso al contenido clínico de los reportes.',
-      });
-    }
     try {
       const collection = firestore.collection('reportes');
       let query = collection;
@@ -536,7 +531,7 @@ async function authenticateSupabase({
     }
 
     const profileQuery = new URLSearchParams({
-      select: 'id,role,first_name,last_name,email',
+      select: 'id,role,first_name,last_name,email,is_active',
       id: `eq.${authUser.id}`,
     });
     const profileResponse = await supabaseFetch(
@@ -551,9 +546,28 @@ async function authenticateSupabase({
     if (!profile || profile.id !== authUser.id || !roles.has(profile.role)) {
       return response.status(403).json({ message: 'La cuenta no tiene un perfil habilitado para reportes.' });
     }
+    if (profile.is_active !== true) {
+      return response.status(403).json({ message: 'La cuenta está inactiva y no puede consultar reportes.' });
+    }
 
     let assignedPatientUids = [];
     if (profile.role === 'doctor') {
+      const credentialQuery = new URLSearchParams({
+        select: 'verification_status',
+        doctor_uid: `eq.${authUser.id}`,
+      });
+      const credentialsResponse = await supabaseFetch(
+        `${baseUrl}/rest/v1/doctor_credentials?${credentialQuery}`,
+        { headers },
+      );
+      if (!credentialsResponse.ok) {
+        return response.status(503).json({ message: 'No se pudo verificar la autorización clínica.' });
+      }
+      const credentials = await credentialsResponse.json();
+      if (!Array.isArray(credentials) || credentials[0]?.verification_status !== 'verified') {
+        return response.status(403).json({ message: 'El médico debe estar verificado por un administrador.' });
+      }
+
       const assignmentQuery = new URLSearchParams({
         select: 'patient_uid',
         doctor_uid: `eq.${authUser.id}`,
