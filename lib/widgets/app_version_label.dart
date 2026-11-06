@@ -6,7 +6,7 @@ class AppVersionLabel extends StatelessWidget {
 
   static const _fallbackVersion = String.fromEnvironment(
     'APP_VERSION',
-    defaultValue: '1.3.1+6',
+    defaultValue: '1.5.0+9',
   );
 
   static final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../bio_medica_colors.dart';
 import '../ble/wearable_bluetooth_service.dart';
@@ -10,14 +11,18 @@ import '../ble/wear_os_data_layer.dart';
 import '../data/biomedica_api.dart';
 import '../data/reminder_repository.dart';
 import '../data/supabase_measurement_repository.dart';
+import '../data/supabase_config.dart';
 import '../models/wearable_measurement.dart';
 import '../services/health_home_widget.dart';
+import '../services/chat_message_notification_service.dart';
+import '../services/firebase_chat_push_service.dart';
 import '../services/local_reminder_scheduler.dart';
 import '../widgets/history_reading_tile.dart';
 import '../widgets/turn_queue_demo.dart';
 import '../widgets/turn_status_hero.dart';
 import '../widgets/vital_indicator_card.dart';
 import 'reports_screen.dart';
+import 'mi_consulta_screen.dart';
 import 'reminder_settings_screen.dart';
 import 'wearable_pairing_sheet.dart';
 
@@ -30,6 +35,8 @@ class PatientShell extends StatefulWidget {
     required this.onSignOut,
     this.isDemo = false,
     this.measurementRepository,
+    this.patientUid = '',
+    this.messageNotifier,
   });
 
   final String patientName;
@@ -38,6 +45,8 @@ class PatientShell extends StatefulWidget {
   final VoidCallback onSignOut;
   final bool isDemo;
   final MeasurementRepository? measurementRepository;
+  final String patientUid;
+  final IncomingMessageNotifier? messageNotifier;
 
   @override
   State<PatientShell> createState() => _PatientShellState();
@@ -48,6 +57,11 @@ class _PatientShellState extends State<PatientShell> {
   final _wearableBluetooth = WearableBluetoothService();
   late final MeasurementRepository _measurementRepository =
       widget.measurementRepository ?? SupabaseMeasurementRepository();
+  late final IncomingMessageNotifier _messageNotifier =
+      widget.messageNotifier ?? ChatMessageNotificationService();
+  final _notifiedMessageIds = <String>{};
+  FirebaseChatPushService? _pushService;
+  bool _notificationPermissionWarningShown = false;
   final _reminderRepository = SupabaseReminderRepository();
   final _reminderScheduler = LocalReminderScheduler();
   final _demoRates = const [72, 75, 71, 78, 76, 73, 77, 74];
@@ -106,6 +120,7 @@ class _PatientShellState extends State<PatientShell> {
     );
     unawaited(_initializeMeasurements());
     if (!widget.isDemo) unawaited(_restoreReminders());
+    unawaited(_configurePushNotifications());
   }
 
   @override
@@ -115,6 +130,7 @@ class _PatientShellState extends State<PatientShell> {
     _watchFreshnessTimer?.cancel();
     unawaited(_watchSubscription?.cancel());
     unawaited(_measurementSubscription?.cancel());
+    unawaited(_pushService?.dispose());
     _wearableBluetooth.removeListener(_onWearableChanged);
     _wearableBluetooth.dispose();
     super.dispose();
@@ -151,6 +167,75 @@ class _PatientShellState extends State<PatientShell> {
         await _updateHomeWidget();
       }
     }
+  }
+
+  Future<void> _configurePushNotifications() async {
+    if (widget.isDemo ||
+        kIsWeb ||
+        !FirebaseChatPushService.enabled ||
+        !SupabaseConfig.isConfigured) {
+      return;
+    }
+    final service = FirebaseChatPushService(
+      supabaseClient: Supabase.instance.client,
+      onMessageReceived: _handleIncomingMessage,
+      onNotificationOpened: () {
+        if (mounted) setState(() => _tab = 5);
+      },
+    );
+    _pushService = service;
+    try {
+      await _messageNotifier.initialize();
+      await service.initialize();
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo configurar Firebase Messaging: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  void _handleIncomingMessage(String messageId) {
+    if (messageId.isEmpty || _notifiedMessageIds.contains(messageId)) return;
+    if (_notifiedMessageIds.length >= 500) {
+      _notifiedMessageIds.remove(_notifiedMessageIds.first);
+    }
+    _notifiedMessageIds.add(messageId);
+    unawaited(_notifyIncomingMessage(messageId));
+  }
+
+  Future<void> _notifyIncomingMessage(String messageId) async {
+    if (kIsWeb) return;
+    try {
+      final shown = await _messageNotifier.notify(messageId);
+      if (!shown && mounted && !_notificationPermissionWarningShown) {
+        _notificationPermissionWarningShown = true;
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Activa las notificaciones para recibir avisos de Mi consulta.',
+            ),
+          ),
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('No se pudo mostrar la notificación de chat: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _signOut() async {
+    final service = _pushService;
+    if (service != null) {
+      try {
+        await service.unregister();
+      } catch (error, stackTrace) {
+        debugPrint('No se pudo desvincular el token de notificaciones: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      } finally {
+        await service.dispose();
+        _pushService = null;
+      }
+    }
+    widget.onSignOut();
   }
 
   bool get _hasRealData =>
@@ -427,6 +512,7 @@ class _PatientShellState extends State<PatientShell> {
       _reportsPage(),
       _turnPage(),
       _profilePage(),
+      MiConsultaScreen(patientUid: widget.patientUid),
     ];
     return Scaffold(
       body: SafeArea(
@@ -473,6 +559,11 @@ class _PatientShellState extends State<PatientShell> {
                 icon: Icon(Icons.person_outline_rounded),
                 selectedIcon: Icon(Icons.person_rounded),
                 label: 'Perfil',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.chat_bubble_outline_rounded),
+                selectedIcon: Icon(Icons.chat_rounded),
+                label: 'Mi consulta',
               ),
             ],
           ),
@@ -1114,7 +1205,7 @@ class _PatientShellState extends State<PatientShell> {
     ),
     const SizedBox(height: 14),
     OutlinedButton.icon(
-      onPressed: widget.onSignOut,
+      onPressed: () => unawaited(_signOut()),
       icon: const Icon(Icons.logout_rounded, size: 18),
       label: const Text('Cerrar sesión'),
       style: OutlinedButton.styleFrom(

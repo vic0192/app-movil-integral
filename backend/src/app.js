@@ -2,7 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { authConfirmationPage } = require('./auth_confirmation_page');
 const {
   hashPassword,
@@ -23,6 +23,7 @@ function createApp({
   supabaseUrl = process.env.SUPABASE_URL,
   supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY,
   supabaseFetch = globalThis.fetch,
+  messaging,
   webRoot = path.join(__dirname, '..', 'public'),
 }) {
   if (!pool || !firestore || !jwtSecret || Buffer.byteLength(jwtSecret) < 32) {
@@ -136,6 +137,206 @@ function createApp({
   app.get('/api/auth/me', (request, response) => {
     response.json({ user: request.user });
   });
+
+  app.put(
+    '/api/chat/push-token',
+    requireSupabaseUser,
+    requireRole('patient', 'doctor'),
+    async (request, response, next) => {
+      const { fid, platform } = request.body ?? {};
+      if (
+        typeof fid !== 'string'
+        || fid.length < 20
+        || fid.length > 4096
+        || !['android', 'ios'].includes(platform)
+      ) {
+        return response.status(400).json({ message: 'El identificador de instalación no es válido.' });
+      }
+      try {
+        const tokenId = hashInstallationId(fid);
+        await firestore.collection('clinical_push_devices').doc(tokenId).set({
+          uid: request.user.uid,
+          fid,
+          platform,
+          updatedAt: new Date().toISOString(),
+        });
+        return response.status(204).end();
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
+
+  app.delete(
+    '/api/chat/push-token',
+    requireSupabaseUser,
+    requireRole('patient', 'doctor'),
+    async (request, response, next) => {
+      const { fid } = request.body ?? {};
+      if (typeof fid !== 'string' || fid.length < 20 || fid.length > 4096) {
+        return response.status(400).json({ message: 'El identificador de instalación no es válido.' });
+      }
+      try {
+        const device = firestore
+          .collection('clinical_push_devices')
+          .doc(hashInstallationId(fid));
+        const snapshot = await device.get();
+        if (snapshot.exists && snapshot.data()?.uid === request.user.uid) {
+          await device.delete();
+        }
+        return response.json({ removed: true });
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
+
+  app.post(
+    '/api/chat/notifications',
+    requireSupabaseUser,
+    requireRole('patient', 'doctor'),
+    async (request, response, next) => {
+      const { messageId } = request.body ?? {};
+      if (typeof messageId !== 'string' || !isUuid(messageId)) {
+        return response.status(400).json({ message: 'El identificador del mensaje no es válido.' });
+      }
+      if (!messaging) {
+        return response.status(503).json({ message: 'Las notificaciones push no están configuradas.' });
+      }
+
+      try {
+        const baseUrl = supabaseUrl.replace(/\/+$/, '');
+        const authorization = request.get('authorization');
+        const messageQuery = new URLSearchParams({
+          select: 'id,conversation_id,sender_uid',
+          id: `eq.${messageId}`,
+        });
+        const [message] = await readSupabaseRows(
+          supabaseFetch,
+          `${baseUrl}/rest/v1/clinical_messages?${messageQuery}`,
+          supabasePublishableKey,
+          authorization,
+        );
+        if (!message) {
+          return response.status(404).json({ message: 'No se encontró el mensaje de chat.' });
+        }
+        if (message.sender_uid !== request.user.uid) {
+          return response.status(403).json({ message: 'Solo puedes notificar tus propios mensajes.' });
+        }
+
+        const conversationQuery = new URLSearchParams({
+          select: 'id,doctor_uid,patient_uid',
+          id: `eq.${message.conversation_id}`,
+        });
+        const [conversation] = await readSupabaseRows(
+          supabaseFetch,
+          `${baseUrl}/rest/v1/clinical_conversations?${conversationQuery}`,
+          supabasePublishableKey,
+          authorization,
+        );
+        if (!conversation) {
+          return response.status(404).json({ message: 'No se encontró la conversación del mensaje.' });
+        }
+
+        const senderIsDoctor =
+          request.user.role === 'doctor'
+          && request.user.uid === conversation.doctor_uid
+          && message.sender_uid === conversation.doctor_uid;
+        const senderIsPatient =
+          request.user.role === 'patient'
+          && request.user.uid === conversation.patient_uid
+          && message.sender_uid === conversation.patient_uid;
+        if (!senderIsDoctor && !senderIsPatient) {
+          return response.status(403).json({ message: 'No puedes notificar mensajes de esta conversación.' });
+        }
+
+        const notification = firestore
+          .collection('clinical_push_notifications')
+          .doc(messageId);
+        try {
+          await notification.create({
+            senderUid: request.user.uid,
+            recipientUid: senderIsDoctor ? conversation.patient_uid : conversation.doctor_uid,
+            status: 'sending',
+            createdAt: new Date().toISOString(),
+          });
+        } catch (error) {
+          if (error.code === 6 || error.code === 'already-exists') {
+            return response.json({ sent: 0, duplicate: true });
+          }
+          throw error;
+        }
+
+        const recipientUid = senderIsDoctor
+          ? conversation.patient_uid
+          : conversation.doctor_uid;
+        try {
+          const devices = await firestore
+            .collection('clinical_push_devices')
+            .where('uid', '==', recipientUid)
+            .limit(500)
+            .get();
+          const deviceDocs = devices.docs ?? [];
+          if (deviceDocs.length === 0) {
+            await notification.update({ status: 'no_devices' });
+            return response.json({ sent: 0 });
+          }
+
+          const fids = deviceDocs.map((device) => device.data().fid);
+          const result = await messaging.sendEachForMulticast({
+            fids,
+            notification: {
+              title: 'Nuevo mensaje en Mi consulta',
+              body: 'Tienes un nuevo mensaje de tu equipo de atención.',
+            },
+            data: {
+              type: 'clinical_chat_message',
+              messageId,
+              conversationId: conversation.id,
+            },
+            android: {
+              priority: 'high',
+              notification: {
+                channelId: 'biomedica_clinical_chat',
+                sound: 'default',
+              },
+            },
+            apns: {
+              payload: { aps: { sound: 'default' } },
+            },
+          });
+
+          await notification.update({
+            status: 'sent',
+            sentCount: result.successCount,
+            completedAt: new Date().toISOString(),
+          });
+          const invalidDeviceCleanup = result.responses.map((delivery, index) => {
+            const code = delivery.error?.code;
+            if (
+              delivery.success
+              || !['messaging/invalid-registration-token', 'messaging/registration-token-not-registered'].includes(code)
+            ) {
+              return Promise.resolve();
+            }
+            return deviceDocs[index].ref.delete();
+          });
+          try {
+            await Promise.all(invalidDeviceCleanup);
+          } catch (cleanupError) {
+            console.error('Could not remove invalid clinical push devices:', cleanupError);
+          }
+
+          return response.json({ sent: result.successCount });
+        } catch (error) {
+          await notification.delete();
+          return next(error);
+        }
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
 
   app.get('/api/admin/users', requireRole('admin'), async (_request, response, next) => {
     try {
@@ -459,7 +660,7 @@ function authenticate({
         [claims.sub],
       );
       if (!result.rowCount) {
-        if (isReportRequest(request.path) && supabaseUrl && supabasePublishableKey) {
+        if (isSupabaseRequest(request.path) && supabaseUrl && supabasePublishableKey) {
           return authenticateSupabase({
             token: match[1],
             request,
@@ -476,7 +677,7 @@ function authenticate({
       next();
     } catch (error) {
       if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-        if (isReportRequest(request.path) && supabaseUrl && supabasePublishableKey) {
+        if (isSupabaseRequest(request.path) && supabaseUrl && supabasePublishableKey) {
           return authenticateSupabase({
             token: match[1],
             request,
@@ -487,7 +688,7 @@ function authenticate({
             supabaseFetch,
           });
         }
-        if (isReportRequest(request.path) && (!supabaseUrl || !supabasePublishableKey)) {
+        if (isSupabaseRequest(request.path) && (!supabaseUrl || !supabasePublishableKey)) {
           return response.status(503).json({
             message: 'La API de reportes no tiene configurada la autenticación Supabase.',
           });
@@ -501,6 +702,44 @@ function authenticate({
 
 function isReportRequest(path) {
   return path === '/reports' || path.startsWith('/reports/');
+}
+
+function isSupabaseRequest(path) {
+  return isReportRequest(path)
+    || path === '/chat/push-token'
+    || path === '/chat/notifications';
+}
+
+function requireSupabaseUser(request, response, next) {
+  if (request.user.authProvider !== 'supabase') {
+    return response.status(403).json({ message: 'Esta operación requiere una sesión de Supabase.' });
+  }
+  next();
+}
+
+function hashInstallationId(fid) {
+  return createHash('sha256').update(fid).digest('hex');
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function readSupabaseRows(supabaseFetch, url, publishableKey, authorization) {
+  const response = await supabaseFetch(url, {
+    headers: {
+      apikey: publishableKey,
+      authorization,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Supabase chat query failed with HTTP ${response.status}.`);
+  }
+  const rows = await response.json();
+  if (!Array.isArray(rows)) {
+    throw new Error('Supabase returned an invalid chat query response.');
+  }
+  return rows;
 }
 
 async function authenticateSupabase({

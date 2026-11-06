@@ -89,6 +89,7 @@ class _BioMedicaAppState extends State<BioMedicaApp> {
     }
     if (profile.role == AppRole.patient) {
       return PatientShell(
+        patientUid: profile.uid,
         patientName: profile.displayName,
         patientEmail: profile.email,
         chronicConditions: profile.chronicConditions,

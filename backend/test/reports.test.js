@@ -12,6 +12,11 @@ const supabaseUsers = new Map();
 const supabaseTokens = new Map();
 const doctorAssignments = new Map();
 const doctorCredentials = new Map();
+const chatMessages = new Map();
+const chatConversations = new Map();
+const pushDevices = new Map();
+const pushNotifications = new Map();
+const pushPayloads = [];
 let server;
 let baseUrl;
 
@@ -48,6 +53,70 @@ const pool = {
 
 const firestore = {
   collection(name) {
+    if (name === 'clinical_push_notifications') {
+      return {
+        doc(id) {
+          return {
+            async create(data) {
+              if (pushNotifications.has(id)) {
+                const error = new Error('already exists');
+                error.code = 6;
+                throw error;
+              }
+              pushNotifications.set(id, { ...data });
+            },
+            async update(fields) {
+              const record = pushNotifications.get(id);
+              if (!record) throw new Error('notification record not found');
+              pushNotifications.set(id, { ...record, ...fields });
+            },
+            async delete() {
+              pushNotifications.delete(id);
+            },
+          };
+        },
+      };
+    }
+    if (name === 'clinical_push_devices') {
+      return {
+        doc(id) {
+          const ref = {
+            async set(data) {
+              pushDevices.set(id, { ...data });
+            },
+            async get() {
+              const data = pushDevices.get(id);
+              return { exists: data !== undefined, data: () => data };
+            },
+            async delete() {
+              pushDevices.delete(id);
+            },
+          };
+          return ref;
+        },
+        where(field, operator, value) {
+          assert.equal(field, 'uid');
+          assert.equal(operator, '==');
+          const query = {
+            limit(count) {
+              assert.equal(count, 500);
+              return query;
+            },
+            async get() {
+              const entries = [...pushDevices.entries()]
+                .filter(([, device]) => device.uid === value);
+              return {
+                docs: entries.map(([id, data]) => ({
+                  data: () => data,
+                  ref: { delete: async () => pushDevices.delete(id) },
+                })),
+              };
+            },
+          };
+          return query;
+        },
+      };
+    }
     assert.equal(name, 'reportes');
     return {
       where(field, operator, value) {
@@ -120,8 +189,28 @@ async function supabaseFetch(url, options) {
     const uid = parsedUrl.searchParams.get('doctor_uid')?.slice(3);
     return Response.json((doctorAssignments.get(uid) ?? []).map((patient_uid) => ({ patient_uid })));
   }
+  if (parsedUrl.pathname === '/rest/v1/clinical_messages') {
+    const id = parsedUrl.searchParams.get('id')?.slice(3);
+    const message = chatMessages.get(id);
+    return Response.json(message ? [message] : []);
+  }
+  if (parsedUrl.pathname === '/rest/v1/clinical_conversations') {
+    const id = parsedUrl.searchParams.get('id')?.slice(3);
+    const conversation = chatConversations.get(id);
+    return Response.json(conversation ? [conversation] : []);
+  }
   return Response.json({}, { status: 404 });
 }
+
+const messaging = {
+  async sendEachForMulticast(payload) {
+    pushPayloads.push(payload);
+    return {
+      successCount: payload.fids.length,
+      responses: payload.fids.map(() => ({ success: true })),
+    };
+  },
+};
 
 before(async () => {
   const app = createApp({
@@ -131,6 +220,7 @@ before(async () => {
     supabaseUrl: 'https://supabase.example.test',
     supabasePublishableKey: 'test-publishable-key',
     supabaseFetch,
+    messaging,
     webRoot: path.join(__dirname, 'fixtures', 'web'),
   });
   server = app.listen(0, '127.0.0.1');
@@ -187,6 +277,11 @@ after(async () => {
   }
   users.clear();
   reports.clear();
+  chatMessages.clear();
+  chatConversations.clear();
+  pushDevices.clear();
+  pushNotifications.clear();
+  pushPayloads.length = 0;
 });
 
 async function registerPatient(email) {
@@ -576,4 +671,76 @@ test('Supabase reports fall back when a JWT is valid but absent from legacy acco
 
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).reports, []);
+});
+
+test('chat messages send a generic push only to the other conversation participant', async () => {
+  registerSupabaseUser('push-patient', 'patient', 'push-patient-token');
+  registerSupabaseUser('push-doctor', 'doctor', 'push-doctor-token');
+  doctorCredentials.set('push-doctor', { verification_status: 'verified' });
+  const messageId = '123e4567-e89b-42d3-a456-426614174000';
+  const conversationId = '123e4567-e89b-42d3-a456-426614174001';
+  const fid = 'doctor-device-token-123456789012';
+  chatMessages.set(messageId, {
+    id: messageId,
+    conversation_id: conversationId,
+    sender_uid: 'push-patient',
+  });
+  chatConversations.set(conversationId, {
+    id: conversationId,
+    doctor_uid: 'push-doctor',
+    patient_uid: 'push-patient',
+  });
+
+  const registered = await fetch(`${baseUrl}/api/chat/push-token`, {
+    method: 'PUT',
+    headers: supabaseHeaders('push-doctor-token'),
+    body: JSON.stringify({ fid, platform: 'android' }),
+  });
+  const notified = await fetch(`${baseUrl}/api/chat/notifications`, {
+    method: 'POST',
+    headers: supabaseHeaders('push-patient-token'),
+    body: JSON.stringify({ messageId }),
+  });
+  const result = await notified.json();
+
+  assert.equal(registered.status, 204);
+  assert.equal(notified.status, 200);
+  assert.deepEqual(result, { sent: 1 });
+  assert.deepEqual(pushPayloads.at(-1).fids, [fid]);
+  assert.deepEqual(pushPayloads.at(-1).data, {
+    type: 'clinical_chat_message',
+    messageId,
+    conversationId,
+  });
+  assert.equal(pushPayloads.at(-1).notification.body.includes('mensaje'), true);
+  assert.equal('body' in pushPayloads.at(-1).data, false);
+
+  const duplicate = await fetch(`${baseUrl}/api/chat/notifications`, {
+    method: 'POST',
+    headers: supabaseHeaders('push-patient-token'),
+    body: JSON.stringify({ messageId }),
+  });
+  assert.deepEqual(await duplicate.json(), { sent: 0, duplicate: true });
+  assert.equal(pushPayloads.length, 1);
+});
+
+test('chat notification endpoint rejects a caller who did not send the message', async () => {
+  registerSupabaseUser('push-owner', 'patient', 'push-owner-token');
+  registerSupabaseUser('push-intruder', 'patient', 'push-intruder-token');
+  const deliveryCount = pushPayloads.length;
+  const messageId = '123e4567-e89b-42d3-a456-426614174002';
+  chatMessages.set(messageId, {
+    id: messageId,
+    conversation_id: '123e4567-e89b-42d3-a456-426614174003',
+    sender_uid: 'push-owner',
+  });
+
+  const response = await fetch(`${baseUrl}/api/chat/notifications`, {
+    method: 'POST',
+    headers: supabaseHeaders('push-intruder-token'),
+    body: JSON.stringify({ messageId }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(pushPayloads.length, deliveryCount);
 });

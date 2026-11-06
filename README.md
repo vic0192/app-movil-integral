@@ -99,6 +99,26 @@ flutter run --dart-define-from-file=supabase.local.json `
   --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
 ```
 
+### Notificaciones de chat en Android
+
+Para recibir mensajes con la app en segundo plano o cerrada, registra en Firebase
+una aplicación Android con el paquete `com.example.biomedica_app`, descarga su
+`google-services.json` y colócalo en `android/app/google-services.json`. Ese
+archivo es configuración cliente; Git lo ignora. Compila activando FCM:
+
+```powershell
+flutter build apk --release --dart-define-from-file=supabase.local.json `
+  --dart-define=BIOMEDICA_FCM_ENABLED=true `
+  --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
+```
+
+El backend de Render usa `FIREBASE_SERVICE_ACCOUNT_JSON` para Firebase Admin.
+La cuenta de servicio debe pertenecer al mismo proyecto Firebase que la app
+Android y tener habilitado Firebase Cloud Messaging. No copies esa cuenta de
+servicio al teléfono ni al repositorio. Sin `google-services.json` y el define
+de FCM, la app conserva los avisos locales mientras está abierta, pero no puede
+recibir push en segundo plano o cerrada.
+
 ### Aplicación web en Render
 
 El servicio `app-biomedica-web` sirve la versión Flutter en `/` y conserva

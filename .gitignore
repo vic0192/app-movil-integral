@@ -37,6 +37,8 @@ migrate_working_dir/
 .env.*
 !.env.example
 /supabase.local.json
+/firebase.local.json
+/android/app/google-services.json
 *service-account*.json
 
 # Symbolication related

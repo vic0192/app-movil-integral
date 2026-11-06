@@ -2,6 +2,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { cert, initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
+const { getMessaging } = require('firebase-admin/messaging');
 const { Pool } = require('pg');
 const { createApp } = require('./app');
 
@@ -33,6 +34,7 @@ async function start() {
   const app = createApp({
     pool,
     firestore: getFirestore(firebaseApp),
+    messaging: getMessaging(firebaseApp),
     jwtSecret,
     supabaseUrl: process.env.SUPABASE_URL,
     supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
