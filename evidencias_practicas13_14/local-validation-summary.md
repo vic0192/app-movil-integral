@@ -16,3 +16,5 @@ Las ejecuciones usaron una API HTTP local controlada para los escenarios de
 repositorio; no accedieron a datos clínicos ni servicios productivos. El daemon
 Docker no estaba disponible, así que no se ejecutó una instancia real de
 PostgreSQL/Supabase.
+
+CI remoto: [GitHub Actions — run 44223004277, exitoso](https://github.com/vic0192/app-movil-integral/actions/runs/44223004277).

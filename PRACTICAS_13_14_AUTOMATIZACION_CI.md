@@ -72,9 +72,10 @@ capturen y traduzcan. Después, el análisis completo y las 95 pruebas quedaron
 verdes. El primer run remoto resolvió Flutter 3.50.0, que trata nuevas
 deprecaciones de Material como fallos de análisis. El workflow se fijó a Flutter
 3.47.9, la misma versión estable con la que se validó localmente; la repetición
-remota superó el análisis. Esa ejecución detectó además que una prueba de
+remota superó el análisis y las pruebas backend. Esa ejecución detectó además que una prueba de
 adaptación visual esperaba la versión antigua `1.3.1+6`, mientras que la app
-reporta `1.5.0+9`; se actualizó la expectativa y se volverá a ejecutar la suite.
+reporta `1.5.0+9`; se actualizó la expectativa. La tercera ejecución completó
+con éxito los dos trabajos de CI.
 
 Gradle muestra avisos de compatibilidad/deprecación del plugin Kotlin/AGP, pero
 los APK se construyeron correctamente. No se detectaron fallos nuevos en las
@@ -84,10 +85,12 @@ pruebas ejecutadas.
 
 - Evidencia local:
   [`local-validation-summary.md`](evidencias_practicas13_14/local-validation-summary.md).
-- Ejecución GitHub Actions: el run inicial detectó un nivel nuevo de lints al
-  usar Flutter 3.50.0. Tras fijar Flutter 3.47.9, pasó análisis y backend, y
-  encontró la expectativa de versión desactualizada indicada arriba. El run
-  final quedará registrado aquí tras corregirla.
+- Ejecución GitHub Actions final:
+  [run 44223004277 — exitoso](https://github.com/vic0192/app-movil-integral/actions/runs/44223004277).
+  Los trabajos Flutter/Wear OS y backend terminaron correctamente. El run
+  inicial reveló incompatibilidad de lints con Flutter 3.50.0 y el segundo
+  encontró la expectativa de versión desactualizada; ambos problemas quedaron
+  corregidos antes de esta ejecución final.
 - No había un dispositivo Android conectado ni el driver de virtualización
   requerido para iniciar el emulador Wear OS. La telemetría física del reloj no
   se simuló como una lectura real.
