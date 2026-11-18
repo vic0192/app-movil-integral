@@ -65,7 +65,7 @@ class SupabaseAccountRepository implements AccountRepository {
           'Confirma tu correo desde el enlace que te enviamos antes de iniciar sesión.',
         );
       }
-      return _loadProfile(user.id, user.email ?? email);
+      return await _loadProfile(user.id, user.email ?? email);
     } on AccountRepositoryException {
       rethrow;
     } on AuthException catch (error) {
@@ -109,7 +109,7 @@ class SupabaseAccountRepository implements AccountRepository {
         );
       }
       if (response.session == null) return null;
-      return _loadProfile(user.id, user.email ?? email);
+      return await _loadProfile(user.id, user.email ?? email);
     } on AccountRepositoryException {
       rethrow;
     } on AuthException catch (error) {

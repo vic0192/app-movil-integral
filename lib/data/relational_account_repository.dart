@@ -28,7 +28,7 @@ class RelationalAccountRepository implements AccountRepository {
         'email': email.trim(),
         'password': password,
       });
-      return _saveSession(response);
+      return await _saveSession(response);
     } on CoreApiException catch (error) {
       throw AccountRepositoryException(error.message);
     }
@@ -46,7 +46,7 @@ class RelationalAccountRepository implements AccountRepository {
         'email': email.trim(),
         'password': password,
       });
-      return _saveSession(response);
+      return await _saveSession(response);
     } on CoreApiException catch (error) {
       throw AccountRepositoryException(error.message);
     }

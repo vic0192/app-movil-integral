@@ -15,6 +15,36 @@ class WearableMeasurementDraft {
   final int? oxygenSaturationPercent;
   final double? bodyTemperatureCelsius;
 
+  factory WearableMeasurementDraft.fromWatchReading(
+    Map<String, dynamic> reading,
+  ) {
+    final updatedAt = reading['updatedAt'];
+    final source = reading['source'];
+    final deviceName = reading['deviceName'];
+    final heartRate = reading['heartRate'];
+    if (updatedAt is! num ||
+        source is! String ||
+        deviceName is! String ||
+        heartRate is! num) {
+      throw const FormatException('El reloj envió una medición incompleta.');
+    }
+
+    final oxygenSaturation = reading['spo2'];
+    final temperature = reading['temperature'];
+    return WearableMeasurementDraft(
+      readingAt: DateTime.fromMillisecondsSinceEpoch(updatedAt.toInt()),
+      source: source,
+      deviceName: deviceName,
+      heartRateBpm: heartRate.round(),
+      oxygenSaturationPercent: oxygenSaturation is num
+          ? oxygenSaturation.round()
+          : null,
+      bodyTemperatureCelsius: temperature is num
+          ? temperature.toDouble()
+          : null,
+    );
+  }
+
   Map<String, Object?> toJson() => {
     'readingAt': readingAt.toUtc().toIso8601String(),
     'source': source,
