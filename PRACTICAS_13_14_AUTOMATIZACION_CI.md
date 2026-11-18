@@ -69,7 +69,10 @@ cambiaron a URI con `/`. El análisis completo también encontró cuatro retorno
 de `Future` sin `await` dentro de `try` en los repositorios de cuenta. Se agregó
 `await` en inicio de sesión/registro para que los errores asíncronos sí se
 capturen y traduzcan. Después, el análisis completo y las 95 pruebas quedaron
-verdes.
+verdes. El primer run remoto resolvió Flutter 3.50.0, que trata nuevas
+deprecaciones de Material como fallos de análisis. El workflow se fijó a Flutter
+3.47.9, la misma versión estable con la que se validó localmente; la repetición
+remota está pendiente.
 
 Gradle muestra avisos de compatibilidad/deprecación del plugin Kotlin/AGP, pero
 los APK se construyeron correctamente. No se detectaron fallos nuevos en las
@@ -79,8 +82,9 @@ pruebas ejecutadas.
 
 - Evidencia local:
   [`local-validation-summary.md`](evidencias_practicas13_14/local-validation-summary.md).
-- Ejecución GitHub Actions: **se completará al publicar el commit de esta
-  práctica**; registrar aquí el enlace del run y su estado final.
+- Ejecución GitHub Actions: el primer push activó el workflow, pero falló en
+  análisis al usar Flutter 3.50.0. Se registrará aquí el run de verificación
+  tras fijar Flutter 3.47.9.
 - No había un dispositivo Android conectado ni el driver de virtualización
   requerido para iniciar el emulador Wear OS. La telemetría física del reloj no
   se simuló como una lectura real.
