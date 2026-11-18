@@ -379,7 +379,7 @@ void main() {
       await tester.pumpWidget(_app());
       expect(find.text('Iniciar sesión'), findsOneWidget);
       expect(find.text('Explorar demostración'), findsNothing);
-      expect(find.textContaining('Versión 1.3.1+6'), findsOneWidget);
+      expect(find.textContaining('Versión 1.5.0+9'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
