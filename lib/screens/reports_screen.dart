@@ -17,6 +17,7 @@ class ReportsScreen extends StatefulWidget {
     this.chronicConditions = const [],
     this.repository,
     this.reportsStream,
+    this.initialReports,
     this.patientNames,
     this.callRepository,
   });
@@ -25,6 +26,7 @@ class ReportsScreen extends StatefulWidget {
   final List<String> chronicConditions;
   final ReportRepository? repository;
   final Stream<List<HealthReport>>? reportsStream;
+  final List<HealthReport>? initialReports;
   final Map<String, String>? patientNames;
   final ClinicalVideoCallRepository? callRepository;
 
@@ -41,6 +43,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Map<String, String> _patientNames = const {};
   String? _initializationError;
   bool _busy = false;
+  bool _hasReceivedReports = false;
 
   @override
   void initState() {
@@ -54,16 +57,43 @@ class _ReportsScreenState extends State<ReportsScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.reportsStream != widget.reportsStream &&
         widget.reportsStream != null) {
-      _reports = widget.reportsStream;
+      _reports = _streamWithInitialReports();
+      _hasReceivedReports = false;
+      _initializationError = null;
+    } else if (oldWidget.initialReports == null &&
+        widget.initialReports != null &&
+        widget.reportsStream != null &&
+        !_hasReceivedReports) {
+      _reports = _streamWithInitialReports();
       _initializationError = null;
     }
+  }
+
+  Stream<List<HealthReport>> _streamWithInitialReports() {
+    final stream = widget.reportsStream;
+    final initialReports = widget.initialReports;
+    if (stream == null || initialReports == null) {
+      return stream ?? const Stream.empty();
+    }
+    return Stream<List<HealthReport>>.multi((controller) {
+      controller.add(initialReports);
+      final subscription = stream.listen(
+        controller.add,
+        onError: (Object error, StackTrace stackTrace) =>
+            controller.addError(error, stackTrace),
+        onDone: controller.close,
+      );
+      controller.onCancel = () => subscription.cancel();
+    });
   }
 
   Future<void> _initialize() async {
     try {
       final reportsStream = widget.reportsStream;
       if (reportsStream != null) {
-        if (mounted) setState(() => _reports = reportsStream);
+        if (mounted) {
+          setState(() => _reports = _streamWithInitialReports());
+        }
         return;
       }
       await _repository.initialize();
@@ -332,6 +362,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return StreamBuilder<List<HealthReport>>(
       stream: reports,
       builder: (context, snapshot) {
+        if (snapshot.hasData) _hasReceivedReports = true;
         if (snapshot.hasError) {
           return _messageState(
             icon: Icons.error_outline_rounded,

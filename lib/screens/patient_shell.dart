@@ -95,6 +95,7 @@ class _PatientShellState extends State<PatientShell> {
   StreamSubscription<List<HealthReport>>? _reportSubscription;
   StreamSubscription<List<ClinicalConversation>>? _conversationSubscription;
   StreamSubscription<List<ClinicalVideoCall>>? _incomingCallSubscription;
+  StreamSubscription<void>? _widgetActionSubscription;
   final Map<String, StreamSubscription<List<ClinicalMessage>>>
   _messageSubscriptions = {};
   final Set<String> _notifiedMessageIds = {};
@@ -148,6 +149,13 @@ class _PatientShellState extends State<PatientShell> {
         const Duration(seconds: 15),
         (_) => unawaited(_refreshWatchNode()),
       );
+      _widgetActionSubscription = HealthHomeWidget.urgentCallRequests.listen(
+        (_) => _handleWidgetUrgentCallRequest(),
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('No se pudo recibir la solicitud del widget BioMedica.');
+          debugPrintStack(stackTrace: stackTrace);
+        },
+      );
     }
     unawaited(_initializeReports());
     if (!widget.isDemo && widget.patientUid.isNotEmpty) {
@@ -178,6 +186,7 @@ class _PatientShellState extends State<PatientShell> {
     unawaited(_reportSubscription?.cancel());
     unawaited(_conversationSubscription?.cancel());
     unawaited(_incomingCallSubscription?.cancel());
+    unawaited(_widgetActionSubscription?.cancel());
     for (final subscription in _messageSubscriptions.values) {
       unawaited(subscription.cancel());
     }
@@ -189,6 +198,16 @@ class _PatientShellState extends State<PatientShell> {
     if (!mounted) return;
     setState(() => _healthConnectRecords = List.of(records));
     unawaited(_updateHomeWidget());
+  }
+
+  void _handleWidgetUrgentCallRequest() {
+    if (!mounted) return;
+    setState(() => _tab = 5);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final chatScreen = _chatScreenKey.currentState;
+      if (chatScreen != null) unawaited(chatScreen.requestUrgentCall());
+    });
   }
 
   Future<void> _refresh() async {
@@ -345,15 +364,17 @@ class _PatientShellState extends State<PatientShell> {
       if (!opened && mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           const SnackBar(
-            content: Text('No se pudo abrir la sala. Solicita otra invitación.'),
+            content: Text(
+              'No se pudo abrir la sala. Solicita otra invitación.',
+            ),
           ),
         );
       }
     } on ClinicalVideoCallException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text(error.message)),
-        );
+        ScaffoldMessenger.maybeOf(
+          context,
+        )?.showSnackBar(SnackBar(content: Text(error.message)));
       }
     } catch (error, stackTrace) {
       debugPrint('Could not respond to an incoming clinical call.');
@@ -590,7 +611,31 @@ class _PatientShellState extends State<PatientShell> {
 
   int? get _currentSpo2 => _spo2Reading?.value.round();
 
-  double? get _currentTemperature => _temperatureReading?.value;
+  ({HealthConnectRecord systolic, HealthConnectRecord diastolic})?
+  get _bloodPressurePair {
+    final systolic = _latestHealthConnectRecord('BLOOD_PRESSURE_SYSTOLIC');
+    final diastolic = _latestHealthConnectRecord('BLOOD_PRESSURE_DIASTOLIC');
+    if (systolic == null || diastolic == null) return null;
+    if (systolic.recordedAt.difference(diastolic.recordedAt).inSeconds.abs() >
+        120) {
+      return null;
+    }
+    return (systolic: systolic, diastolic: diastolic);
+  }
+
+  String? get _currentBloodPressure {
+    final pair = _bloodPressurePair;
+    if (pair == null) return null;
+    return '${pair.systolic.value.round()}/${pair.diastolic.value.round()}';
+  }
+
+  DateTime? get _bloodPressureRecordedAt {
+    final pair = _bloodPressurePair;
+    if (pair == null) return null;
+    return pair.systolic.recordedAt.isAfter(pair.diastolic.recordedAt)
+        ? pair.systolic.recordedAt
+        : pair.diastolic.recordedAt;
+  }
 
   HealthConnectRecord? _latestHealthConnectRecord(String dataType) {
     HealthConnectRecord? latest;
@@ -627,13 +672,22 @@ class _PatientShellState extends State<PatientShell> {
   }
 
   Future<void> _updateHomeWidget() {
-    final readingAt = _watchIsConnected
-        ? _watchUpdatedAt
-        : _latestSavedMeasurement?.readingAt;
+    final readingTimes = <DateTime>[
+      ?(_watchIsConnected ? _watchUpdatedAt : null),
+      ?_latestSavedMeasurement?.readingAt,
+      ?_spo2Reading?.recordedAt,
+      ?_bloodPressureRecordedAt,
+    ];
+    final readingAt = readingTimes.isEmpty
+        ? null
+        : readingTimes.reduce(
+            (latest, candidate) =>
+                candidate.isAfter(latest) ? candidate : latest,
+          );
     return HealthHomeWidget.update(
       heartRate: _currentHeartRate,
       oxygenSaturation: _currentSpo2,
-      temperature: _currentTemperature,
+      bloodPressure: _currentBloodPressure,
       updatedAt: readingAt,
     );
   }
@@ -679,7 +733,8 @@ class _PatientShellState extends State<PatientShell> {
     } catch (error, stackTrace) {
       debugPrint('No se pudo consultar la conexión del Galaxy Watch: $error');
       debugPrintStack(stackTrace: stackTrace);
-      const message = 'No se pudo consultar el reloj. Actualiza para reintentar.';
+      const message =
+          'No se pudo consultar el reloj. Actualiza para reintentar.';
       if (mounted && _watchNodeError != message) {
         setState(() => _watchNodeError = message);
       }
@@ -717,7 +772,9 @@ class _PatientShellState extends State<PatientShell> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No se pudo abrir Galaxy Wearable. Inténtalo de nuevo.'),
+            content: Text(
+              'No se pudo abrir Galaxy Wearable. Inténtalo de nuevo.',
+            ),
           ),
         );
       }
@@ -884,7 +941,9 @@ class _PatientShellState extends State<PatientShell> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No se pudo guardar la medición. Inténtalo de nuevo.'),
+            content: Text(
+              'No se pudo guardar la medición. Inténtalo de nuevo.',
+            ),
           ),
         );
       }
@@ -1048,6 +1107,7 @@ class _PatientShellState extends State<PatientShell> {
     chronicConditions: widget.chronicConditions,
     repository: _reportRepository,
     reportsStream: _reportsStream,
+    initialReports: _reportsLoading ? null : _reports,
   );
 
   Widget _home() => _scroll([

@@ -25,6 +25,8 @@ class MainActivity : FlutterFragmentActivity(),
     MessageClient.OnMessageReceivedListener {
     private var wearableEventSink: EventChannel.EventSink? = null
     private var latestWearableReading: Map<String, Any>? = null
+    private var widgetActionEventSink: EventChannel.EventSink? = null
+    private var pendingUrgentCallRequest = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -153,6 +155,29 @@ class MainActivity : FlutterFragmentActivity(),
             }
         }
 
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.biomedica/health_widget_actions",
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                widgetActionEventSink = events
+                val launchRequestedCall =
+                    intent?.getBooleanExtra(
+                        HealthWidgetProvider.EXTRA_URGENT_CALL_REQUEST,
+                        false,
+                    ) == true
+                if (pendingUrgentCallRequest || launchRequestedCall) {
+                    pendingUrgentCallRequest = false
+                    intent?.removeExtra(HealthWidgetProvider.EXTRA_URGENT_CALL_REQUEST)
+                    events?.success(mapOf("action" to "urgent_call"))
+                }
+            }
+
+            override fun onCancel(arguments: Any?) {
+                widgetActionEventSink = null
+            }
+        })
+
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.biomedica/health_connect",
@@ -171,6 +196,25 @@ class MainActivity : FlutterFragmentActivity(),
                     )
                 }
                 else -> result.notImplemented()
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (
+            intent.getBooleanExtra(
+                HealthWidgetProvider.EXTRA_URGENT_CALL_REQUEST,
+                false,
+            )
+        ) {
+            intent.removeExtra(HealthWidgetProvider.EXTRA_URGENT_CALL_REQUEST)
+            val sink = widgetActionEventSink
+            if (sink == null) {
+                pendingUrgentCallRequest = true
+            } else {
+                sink.success(mapOf("action" to "urgent_call"))
             }
         }
     }

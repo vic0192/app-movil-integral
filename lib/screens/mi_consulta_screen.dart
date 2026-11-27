@@ -140,6 +140,92 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
     }
   }
 
+  Future<void> requestUrgentCall() async {
+    if (_sending) return;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+
+    var doctorsContacted = 0;
+    var doctorsFailed = 0;
+    try {
+      final doctors = await _repository.assignedDoctors();
+      if (!mounted) return;
+      if (doctors.isEmpty) {
+        throw const ClinicalChatException(
+          'No tienes médicos asignados para recibir la solicitud.',
+        );
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('¿Solicitar llamada urgente?'),
+          content: const Text(
+            'Se enviará una solicitud a tus médicos asignados. No garantiza '
+            'respuesta inmediata y no sustituye los servicios de emergencia.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.emergency_rounded),
+              label: const Text('Enviar solicitud'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+
+      const requestMessage =
+          'SOLICITUD URGENTE DE VIDEOLLAMADA: el paciente solicita que un '
+          'médico asignado se comunique lo antes posible. Esta solicitud no '
+          'sustituye los servicios de emergencia.';
+      for (final doctor in doctors) {
+        try {
+          final conversationId = await _repository.createConversation(
+            doctor.uid,
+          );
+          await _repository.sendMessage(conversationId, requestMessage);
+          doctorsContacted++;
+        } on ClinicalChatException catch (error, stackTrace) {
+          debugPrint('Urgent call request to ${doctor.uid} failed: $error');
+          debugPrintStack(stackTrace: stackTrace);
+          doctorsFailed++;
+        }
+      }
+
+      if (doctorsContacted == 0) {
+        throw const ClinicalChatException(
+          'No se pudo enviar la solicitud urgente. Inténtalo de nuevo.',
+        );
+      }
+
+      if (!mounted) return;
+      final message = doctorsFailed == 0
+          ? 'Solicitud urgente enviada a tus médicos asignados.'
+          : 'Solicitud enviada a $doctorsContacted de ${doctors.length} '
+                'médicos; no se pudo contactar a los demás.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is ClinicalChatException
+          ? error.message
+          : 'No se pudo enviar la solicitud urgente. Inténtalo de nuevo.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
   Future<void> _joinDemoCall() async {
     final controller = TextEditingController();
     final invite = await showDialog<String>(

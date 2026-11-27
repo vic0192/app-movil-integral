@@ -138,9 +138,10 @@ class ApiReportRepository implements ReportRepository {
   }
 
   @override
-  Stream<List<HealthReport>> watchReports() {
+  Stream<List<HealthReport>> watchReports() async* {
     _requireOwner();
-    return _api.events('/api/reports/stream').map(_decodeReports);
+    yield _decodeReports(await _api.get('/api/reports'));
+    yield* _api.events('/api/reports/stream').map(_decodeReports);
   }
 
   List<HealthReport> _decodeReports(Map<String, dynamic> response) {
