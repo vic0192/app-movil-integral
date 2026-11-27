@@ -50,16 +50,16 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   ) async {
     final selected = await showDialog<List<String>>(
       context: context,
-      builder: (context) => _AssignmentDialog(
-        doctor: doctor,
-        patients: patients,
-      ),
+      builder: (context) =>
+          _AssignmentDialog(doctor: doctor, patients: patients),
     );
     if (selected == null || !mounted) return;
     setState(() => _busy = true);
     try {
       await _repository.updateDoctorAssignments(doctor.uid, selected);
-      _message('${selected.length} paciente(s) asignado(s) a ${doctor.displayName}.');
+      _message(
+        '${selected.length} paciente(s) asignado(s) a ${doctor.displayName}.',
+      );
     } on AdminUserException catch (error) {
       _message(error.message);
     } catch (error) {
@@ -80,41 +80,41 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Widget build(BuildContext context) {
     final error = _error;
     if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'No se pudieron consultar las cuentas: $error',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: BioMedicaColors.red),
-          ),
+      return _scrollState(
+        Text(
+          'No se pudieron consultar las cuentas: $error',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: BioMedicaColors.red),
         ),
       );
     }
     final stream = _users;
-    if (stream == null) return const Center(child: CircularProgressIndicator());
+    if (stream == null) {
+      return _scrollState(const CircularProgressIndicator());
+    }
     return StreamBuilder<List<AppUserProfile>>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(
-            child: Text(
+          return _scrollState(
+            Text(
               'No se pudieron consultar las cuentas: ${snapshot.error}',
               textAlign: TextAlign.center,
             ),
           );
         }
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return _scrollState(const CircularProgressIndicator());
         }
         final users = snapshot.data!;
         final patients = users
             .where((user) => user.role == AppRole.patient)
             .toList(growable: false);
         if (users.isEmpty) {
-          return const Center(child: Text('Aún no hay cuentas registradas.'));
+          return _scrollState(const Text('Aún no hay cuentas registradas.'));
         }
         return ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(12),
           children: [
             const Padding(
@@ -191,6 +191,18 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
       },
     );
   }
+
+  Widget _scrollState(Widget child) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: Center(
+          child: Padding(padding: const EdgeInsets.all(24), child: child),
+        ),
+      ),
+    ),
+  );
 }
 
 class _AssignmentDialog extends StatefulWidget {
@@ -204,8 +216,7 @@ class _AssignmentDialog extends StatefulWidget {
 }
 
 class _AssignmentDialogState extends State<_AssignmentDialog> {
-  late final Set<String> _selected =
-      widget.doctor.assignedPatientUids.toSet();
+  late final Set<String> _selected = widget.doctor.assignedPatientUids.toSet();
 
   @override
   Widget build(BuildContext context) => AlertDialog(

@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:biomedica_app/bio_medica_app.dart';
 import 'package:biomedica_app/data/account_repository.dart';
 import 'package:biomedica_app/models/app_user_profile.dart';
+import 'package:biomedica_app/services/app_lock_service.dart';
 
 void main() {
   testWidgets('muestra el acceso de pacientes BioMedica', (tester) async {
@@ -273,7 +274,7 @@ void main() {
     await _openRegistration(tester);
     await _submitRegistration(tester);
 
-    expect(find.text('Mis signos vitales'), findsOneWidget);
+    expect(find.text('Última medición'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -300,7 +301,7 @@ void main() {
     await tester.pumpAndSettle();
     await _submitRegistration(tester);
 
-    expect(find.text('Mis signos vitales'), findsOneWidget);
+    expect(find.text('Última medición'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -319,7 +320,7 @@ void main() {
     );
     await _submitRegistration(tester);
 
-    expect(find.text('Mis signos vitales'), findsOneWidget);
+    expect(find.text('Última medición'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -360,7 +361,7 @@ void main() {
     await tester.tap(find.text('Iniciar sesión'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Mis signos vitales'), findsOneWidget);
+    expect(find.text('Última medición'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -379,7 +380,7 @@ void main() {
       await tester.pumpWidget(_app());
       expect(find.text('Iniciar sesión'), findsOneWidget);
       expect(find.text('Explorar demostración'), findsNothing);
-      expect(find.textContaining('Versión 1.3.1+6'), findsOneWidget);
+      expect(find.textContaining('Versión 1.5.0+9'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -449,7 +450,10 @@ Future<void> _submitRegistration(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Widget _app() => BioMedicaApp(accountRepository: _FakeAccountRepository());
+Widget _app() => BioMedicaApp(
+  accountRepository: _FakeAccountRepository(),
+  appLockService: AppLockService(store: _WidgetTestAppLockStore()),
+);
 
 Finder _passwordField() => find.descendant(
   of: find.byKey(const ValueKey('accountPassword')),
@@ -499,4 +503,15 @@ class _FakeAccountRepository implements AccountRepository {
 
   @override
   Future<void> signOut() async {}
+}
+
+class _WidgetTestAppLockStore implements AppLockStore {
+  @override
+  Future<void> deletePassword() async {}
+
+  @override
+  Future<String?> readPassword() async => null;
+
+  @override
+  Future<void> writePassword(String password) async {}
 }

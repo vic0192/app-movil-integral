@@ -48,10 +48,16 @@ const pool = {
 };
 
 before(async () => {
+  const reportCollection = {
+    limit: () => ({ get: async () => ({ docs: [] }) }),
+    where: () => reportCollection,
+    onSnapshot: (onData) => {
+      queueMicrotask(() => onData({ docs: [] }));
+      return () => {};
+    },
+  };
   const firestore = {
-    collection: () => ({
-      limit: () => ({ get: async () => ({ docs: [] }) }),
-    }),
+    collection: () => reportCollection,
   };
   const app = createApp({ pool, firestore, jwtSecret });
   server = app.listen(0, '127.0.0.1');
@@ -134,6 +140,28 @@ test('login returns the profile and unauthorized requests are rejected', async (
   assert.equal(unauthorized.status, 401);
 });
 
+test('report event stream sends the initial authorized snapshot', async () => {
+  const uid = 'admin-stream-test-id';
+  users.set(uid, {
+    id: uid,
+    display_name: 'Admin Demo',
+    email: 'admin-stream@example.com',
+    role: 'admin',
+    password_hash: 'unused',
+  });
+  const token = jwt.sign({ sub: uid }, jwtSecret, { issuer: 'biomedica-api' });
+  const response = await fetch(`${baseUrl}/api/reports/stream`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const reader = response.body.getReader();
+  const { value } = await reader.read();
+  await reader.cancel();
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /text\/event-stream/);
+  assert.match(new TextDecoder().decode(value), /"reports":\[\]/);
+});
+
 test('server rejects invalid measurements, report fields, and document IDs', () => {
   const now = Date.now();
   const measurement = {
@@ -146,6 +174,22 @@ test('server rejects invalid measurements, report fields, and document IDs', () 
   };
 
   assert.equal(validateMeasurement(measurement, now), null);
+  assert.equal(
+    validateMeasurement({
+      ...measurement,
+      readingAt: new Date(now - 6 * 60_000).toISOString(),
+    }, now),
+    null,
+  );
+  assert.ok(validateMeasurement({
+    ...measurement,
+    readingAt: new Date(now - 25 * 60 * 60_000).toISOString(),
+  }, now));
+  assert.ok(validateMeasurement({
+    ...measurement,
+    source: 'ble_hr',
+    readingAt: new Date(now - 6 * 60_000).toISOString(),
+  }, now));
   assert.match(
     validateMeasurement({ ...measurement, heartRateBpm: 221 }, now),
     /frecuencia cardiaca/,

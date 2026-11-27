@@ -590,6 +590,90 @@ test('Supabase doctors can read assigned patients only and cannot create reports
   assert.equal(reports.has('REP-DOCTOR-001'), false);
 });
 
+test('verified doctors can review assigned reports and persist feedback', async () => {
+  registerSupabaseUser('supabase-review-patient', 'patient', 'review-patient-token');
+  registerSupabaseUser('supabase-review-doctor', 'doctor', 'review-doctor-token');
+  doctorCredentials.set('supabase-review-doctor', { verification_status: 'verified' });
+  doctorAssignments.set('supabase-review-doctor', ['supabase-review-patient']);
+  reports.set('REP-REVIEW-001', {
+    ownerUid: 'supabase-review-patient',
+    equipment: 'Fiebre',
+    description: 'Temperatura elevada desde la mañana.',
+    priority: 'Media',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  reports.set('REP-REVIEW-PRIVATE', {
+    ownerUid: 'supabase-patient-unassigned',
+    equipment: 'Dolor de cabeza',
+    description: 'Reporte fuera de asignación.',
+    priority: 'Baja',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const reviewed = await fetch(`${baseUrl}/api/reports/REP-REVIEW-001/review`, {
+    method: 'PATCH',
+    headers: supabaseHeaders('review-doctor-token'),
+    body: JSON.stringify({ observations: 'Se contactó al paciente; continuar vigilancia.' }),
+  });
+  const unassigned = await fetch(`${baseUrl}/api/reports/REP-REVIEW-PRIVATE/review`, {
+    method: 'PATCH',
+    headers: supabaseHeaders('review-doctor-token'),
+    body: JSON.stringify({ observations: 'No autorizado.' }),
+  });
+  const patientWrite = await fetch(`${baseUrl}/api/reports/REP-REVIEW-001/review`, {
+    method: 'PATCH',
+    headers: supabaseHeaders('review-patient-token'),
+    body: JSON.stringify({ observations: 'No autorizado.' }),
+  });
+
+  assert.equal(reviewed.status, 200);
+  const { report } = await reviewed.json();
+  assert.equal(report.reviewStatus, 'reviewed');
+  assert.equal(report.reviewObservations, 'Se contactó al paciente; continuar vigilancia.');
+  assert.equal(report.reviewedByUid, 'supabase-review-doctor');
+  assert.ok(report.reviewedAt);
+  assert.equal(reports.get('REP-REVIEW-001').reviewStatus, 'reviewed');
+  assert.equal(reports.get('REP-REVIEW-001').reviewObservations, report.reviewObservations);
+  assert.equal(unassigned.status, 403);
+  assert.equal(patientWrite.status, 403);
+});
+
+test('editing a reviewed report returns it to pending review', async () => {
+  const patient = await registerPatient('report-review-reset@example.com');
+  const reportId = 'REP-REVIEW-RESET';
+  reports.set(reportId, {
+    ownerUid: patient.user.uid,
+    equipment: 'Fiebre',
+    description: 'Reporte original',
+    priority: 'Media',
+    reviewStatus: 'reviewed',
+    reviewObservations: 'Observación previa',
+    reviewedAt: new Date(),
+    reviewedByUid: 'doctor-1',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const response = await fetch(`${baseUrl}/api/reports/${reportId}`, {
+    method: 'PUT',
+    headers: authHeaders(patient.token),
+    body: JSON.stringify({
+      equipment: 'Fiebre',
+      description: 'Reporte actualizado',
+      priority: 'Media',
+    }),
+  });
+  const { report } = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(report.reviewStatus, 'pending');
+  assert.equal(report.reviewObservations, null);
+  assert.equal(report.reviewedAt, null);
+  assert.equal(report.reviewedByUid, null);
+});
+
 test('Supabase administrators can read reports but cannot alter clinical report content', async () => {
   registerSupabaseUser('supabase-admin-no-clinical-access', 'admin', 'admin-token');
   reports.set('REP-ADMIN-PRIVATE', {

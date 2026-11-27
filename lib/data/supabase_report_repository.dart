@@ -71,12 +71,13 @@ class SupabaseReportRepository implements ReportRepository {
     _validateDraft(draft);
     final userId = _requirePatient();
     final id = _validateId(documentId ?? draft.id);
+    final reportId = id.isEmpty ? HealthReportDraft.generateId() : id;
     final record = <String, Object?>{
+      'id': reportId,
       'owner_uid': userId,
       'equipment': draft.equipment.trim(),
       'description': draft.description.trim(),
       'priority': draft.priority,
-      if (id.isNotEmpty) 'id': id,
     };
     try {
       final result = await supabaseClient
@@ -86,8 +87,20 @@ class SupabaseReportRepository implements ReportRepository {
           .single();
       return result['id'] as String;
     } on PostgrestException catch (error) {
-      if (error.code == '23505' && id.isNotEmpty) {
-        throw DuplicateReportIdException(id);
+      if (error.code == '23505') {
+        final existing = await supabaseClient
+            .from('equipment_reports')
+            .select('owner_uid,equipment,description,priority')
+            .eq('id', reportId)
+            .maybeSingle();
+        if (existing != null &&
+            existing['owner_uid'] == userId &&
+            existing['equipment'] == record['equipment'] &&
+            existing['description'] == record['description'] &&
+            existing['priority'] == record['priority']) {
+          return reportId;
+        }
+        throw DuplicateReportIdException(reportId);
       }
       throw ReportStoreException(error.message, code: error.code);
     }

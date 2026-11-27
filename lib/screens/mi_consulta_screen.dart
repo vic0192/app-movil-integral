@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../bio_medica_colors.dart';
 import '../data/clinical_chat_repository.dart';
+import '../services/demo_video_call_service.dart';
 
 class MiConsultaScreen extends StatefulWidget {
   const MiConsultaScreen({
@@ -139,6 +140,72 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
     }
   }
 
+  Future<void> _joinDemoCall() async {
+    final controller = TextEditingController();
+    final invite = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unirse a videollamada demo'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Pega el enlace de invitación recibido del médico. Jitsi público '
+              'es solo para demostración: no compartas nombres, diagnósticos '
+              'ni datos clínicos.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: 'Enlace de invitación',
+                hintText: 'https://meet.jit.si/BioMedicaDemo-…',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Unirse'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (invite == null || !mounted) return;
+    if (!DemoVideoCallService.isValidInvite(invite)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El enlace no corresponde a una sala de BioMedica demo.'),
+        ),
+      );
+      return;
+    }
+    try {
+      final opened = await DemoVideoCallService.openInvite(invite);
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir la sala de video.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo abrir la videollamada: $error')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final conversation = _selectedConversation;
@@ -177,6 +244,27 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
           const Text(
             'Comunícate de forma privada con el equipo médico asignado.',
             style: TextStyle(color: BioMedicaColors.muted),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: BioMedicaColors.primaryLight,
+                child: Icon(
+                  Icons.video_call_outlined,
+                  color: BioMedicaColors.primary,
+                ),
+              ),
+              title: const Text('Videollamada de demostración'),
+              subtitle: const Text(
+                'Únete con el enlace que te envíe tu médico.',
+              ),
+              trailing: IconButton(
+                tooltip: 'Pegar enlace e ingresar',
+                onPressed: _joinDemoCall,
+                icon: const Icon(Icons.arrow_forward_rounded),
+              ),
+            ),
           ),
           if (_error != null) _errorBanner(_error!),
           const SizedBox(height: 16),

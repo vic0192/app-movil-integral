@@ -1,18 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../bio_medica_colors.dart';
 import '../ble/wearable_bluetooth_service.dart';
+import '../ble/wear_os_data_layer.dart';
 
 class WearablePairingSheet extends StatefulWidget {
-  const WearablePairingSheet({
-    super.key,
-    required this.monitor,
-    required this.onUseDemo,
-  });
+  const WearablePairingSheet({super.key, required this.monitor});
 
   final WearableBluetoothService monitor;
-  final VoidCallback onUseDemo;
 
   @override
   State<WearablePairingSheet> createState() => _WearablePairingSheetState();
@@ -20,6 +18,43 @@ class WearablePairingSheet extends StatefulWidget {
 
 class _WearablePairingSheetState extends State<WearablePairingSheet> {
   String? _error;
+  String? _wearOsError;
+  List<WearOsNode> _wearOsNodes = const [];
+  bool _loadingWearOsNodes = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refreshWearOsNodes());
+  }
+
+  Future<void> _refreshWearOsNodes() async {
+    setState(() {
+      _loadingWearOsNodes = true;
+      _wearOsError = null;
+    });
+    try {
+      final nodes = await WearOsDataLayer.connectedNodes();
+      if (mounted) setState(() => _wearOsNodes = nodes);
+    } catch (error) {
+      if (mounted) setState(() => _wearOsError = '$error');
+    } finally {
+      if (mounted) setState(() => _loadingWearOsNodes = false);
+    }
+  }
+
+  Future<void> _openGalaxyWearable() async {
+    try {
+      final opened = await WearOsDataLayer.openGalaxyWearable();
+      if (!mounted || opened) return;
+      setState(() {
+        _wearOsError =
+            'No se encontró Galaxy Wearable. Empareja el reloj desde la app del fabricante.';
+      });
+    } catch (error) {
+      if (mounted) setState(() => _wearOsError = '$error');
+    }
+  }
 
   Future<void> _scan() async {
     setState(() => _error = null);
@@ -71,14 +106,17 @@ class _WearablePairingSheetState extends State<WearablePairingSheet> {
               ],
             ),
             const Text(
-              'Busca el STF Kronos y selecciónalo para conectarlo. Las mediciones '
-              'BLE estándar compatibles se enviarán a BioMedica automáticamente.',
+              'El Galaxy Watch se vincula primero desde Galaxy Wearable y aparece '
+              'aquí mediante Wear OS. El escáner Bluetooth LE de abajo es para '
+              'sensores compatibles como STF Kronos.',
               style: TextStyle(
                 color: BioMedicaColors.muted,
                 fontSize: 12,
                 height: 1.4,
               ),
             ),
+            const SizedBox(height: 10),
+            _wearOsPanel(),
             const SizedBox(height: 12),
             _measurementSummary(widget.monitor),
             const SizedBox(height: 10),
@@ -164,15 +202,116 @@ class _WearablePairingSheetState extends State<WearablePairingSheet> {
               ),
               const SizedBox(height: 4),
               Expanded(child: _scanResults(widget.monitor)),
-              TextButton.icon(
-                onPressed: widget.onUseDemo,
-                icon: const Icon(Icons.science_outlined, size: 17),
-                label: const Text('Usar datos de muestra'),
-              ),
             ],
           ],
         ),
       ),
+    ),
+  );
+
+  Widget _wearOsPanel() => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: BioMedicaColors.primaryLight,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Galaxy Watch / Wear OS',
+                style: TextStyle(
+                  color: BioMedicaColors.ink,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Actualizar relojes conectados',
+              onPressed: _loadingWearOsNodes ? null : _refreshWearOsNodes,
+              visualDensity: VisualDensity.compact,
+              icon: _loadingWearOsNodes
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded, size: 19),
+            ),
+          ],
+        ),
+        if (_wearOsError case final error?)
+          Text(
+            error,
+            style: const TextStyle(color: BioMedicaColors.red, fontSize: 11),
+          )
+        else if (_wearOsNodes.isEmpty)
+          const Text(
+            'No hay un reloj Wear OS conectado. Empareja el Samsung con este '
+            'teléfono en Galaxy Wearable; después pulsa actualizar. No se puede '
+            'hacer el emparejamiento inicial desde el escáner BLE.',
+            style: TextStyle(
+              color: BioMedicaColors.muted,
+              fontSize: 10,
+              height: 1.35,
+            ),
+          )
+        else
+          ..._wearOsNodes.map(
+            (node) => ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.watch_rounded,
+                color: BioMedicaColors.primary,
+                size: 20,
+              ),
+              title: Text(
+                node.displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: BioMedicaColors.ink,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              subtitle: Text(
+                node.isNearby
+                    ? 'Vinculado y conectado a este teléfono'
+                    : 'Vinculado; esperando conexión cercana',
+                style: const TextStyle(
+                  color: BioMedicaColors.muted,
+                  fontSize: 9,
+                ),
+              ),
+              trailing: const Icon(
+                Icons.check_circle_rounded,
+                color: BioMedicaColors.green,
+                size: 18,
+              ),
+            ),
+          ),
+        if (_wearOsNodes.isEmpty) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _openGalaxyWearable,
+              icon: const Icon(Icons.open_in_new_rounded, size: 16),
+              label: const Text('Abrir Galaxy Wearable'),
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              ),
+            ),
+          ),
+        ],
+      ],
     ),
   );
 

@@ -5,11 +5,10 @@ class HealthHomeWidget {
   static const _channel = MethodChannel('com.biomedica/health_widget');
 
   static Future<void> update({
-    required int heartRate,
-    required int oxygenSaturation,
-    required double temperature,
-    required bool isDemo,
-    required DateTime updatedAt,
+    required int? heartRate,
+    required int? oxygenSaturation,
+    required double? temperature,
+    required DateTime? updatedAt,
   }) async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
 
@@ -17,11 +16,11 @@ class HealthHomeWidget {
       await _channel.invokeMethod<void>('update', {
         'heartRate': heartRate,
         'spo2': oxygenSaturation,
-        'temperature': temperature.toStringAsFixed(1),
-        'isDemo': isDemo,
-        'updatedAt':
-            '${updatedAt.hour.toString().padLeft(2, '0')}:'
-            '${updatedAt.minute.toString().padLeft(2, '0')}',
+        'temperature': temperature?.toStringAsFixed(1),
+        'updatedAt': updatedAt == null
+            ? null
+            : '${updatedAt.hour.toString().padLeft(2, '0')}:'
+                  '${updatedAt.minute.toString().padLeft(2, '0')}',
       });
     } on PlatformException catch (error, stackTrace) {
       debugPrint('No se pudo actualizar el widget BioMedica: $error');
