@@ -14,7 +14,7 @@ export PATH="$FLUTTER_HOME/bin:$FLUTTER_HOME/bin/cache/dart-sdk/bin:$PATH"
 
 flutter config --no-analytics
 flutter precache --web
-flutter pub get --enforce-lockfile
+flutter pub get
 flutter build web --release
 
 npm ci --prefix backend
