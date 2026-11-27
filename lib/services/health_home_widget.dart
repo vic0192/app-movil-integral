@@ -3,11 +3,21 @@ import 'package:flutter/services.dart';
 
 class HealthHomeWidget {
   static const _channel = MethodChannel('com.biomedica/health_widget');
+  static const _actionsChannel = EventChannel(
+    'com.biomedica/health_widget_actions',
+  );
+
+  static Stream<void> get urgentCallRequests => _actionsChannel
+      .receiveBroadcastStream()
+      .where(
+        (event) => event is Map && event['action'] == 'urgent_call',
+      )
+      .map((_) {});
 
   static Future<void> update({
     required int? heartRate,
     required int? oxygenSaturation,
-    required double? temperature,
+    required String? bloodPressure,
     required DateTime? updatedAt,
   }) async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
@@ -16,7 +26,7 @@ class HealthHomeWidget {
       await _channel.invokeMethod<void>('update', {
         'heartRate': heartRate,
         'spo2': oxygenSaturation,
-        'temperature': temperature?.toStringAsFixed(1),
+        'bloodPressure': bloodPressure,
         'updatedAt': updatedAt == null
             ? null
             : '${updatedAt.hour.toString().padLeft(2, '0')}:'

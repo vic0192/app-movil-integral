@@ -18,6 +18,28 @@ void main() {
   setUp(() => repository = _FakeReportRepository());
   tearDown(() async => repository.close());
 
+  testWidgets('shows the initial reports snapshot before the live stream emits', (
+    tester,
+  ) async {
+    final liveUpdates = StreamController<List<HealthReport>>.broadcast();
+    addTearDown(liveUpdates.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReportsScreen(
+          patientName: 'Ana Paciente',
+          repository: repository,
+          reportsStream: liveUpdates.stream,
+          initialReports: const [],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Aún no hay reportes. Crea uno para comenzar.'), findsOneWidget);
+    expect(find.text('Cargando reportes...'), findsNothing);
+  });
+
   testWidgets('TC01 - alta válida asigna ID automáticamente y consulta', (
     tester,
   ) async {

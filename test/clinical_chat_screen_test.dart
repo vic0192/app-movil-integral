@@ -36,6 +36,42 @@ void main() {
     expect(find.text('Necesito consultar mi reporte.'), findsOneWidget);
   });
 
+  testWidgets(
+    'sends an urgent call request to assigned doctors after confirmation',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MiConsultaScreen(
+            patientUid: 'patient-1',
+            repository: repository,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final state = tester.state<MiConsultaScreenState>(
+        find.byType(MiConsultaScreen),
+      );
+      final request = state.requestUrgentCall();
+      await tester.pumpAndSettle();
+
+      expect(find.text('¿Solicitar llamada urgente?'), findsOneWidget);
+      expect(
+        find.textContaining('no sustituye los servicios de emergencia'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Enviar solicitud'));
+      await tester.pumpAndSettle();
+      await request;
+
+      expect(repository.messages, hasLength(1));
+      expect(
+        repository.messages.single.body,
+        contains('SOLICITUD URGENTE DE VIDEOLLAMADA'),
+      );
+    },
+  );
+
   testWidgets('patient sees a clear error when chat creation fails', (
     tester,
   ) async {
