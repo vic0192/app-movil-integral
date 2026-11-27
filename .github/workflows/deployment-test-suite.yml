@@ -1,0 +1,195 @@
+name: BioMedica full deployment test suite
+
+run-name: BioMedica test suite ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Opaque request identifier issued by the authenticated portal
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: biomedica-full-deployment-test-suite
+  cancel-in-progress: false
+
+jobs:
+  full-test-suite:
+    name: Site, mobile, API, and caja roja
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out mobile application
+        uses: actions/checkout@v4
+
+      - name: Check out BioMedica website
+        uses: actions/checkout@v4
+        with:
+          repository: ocjvic-web/dispositivos-inteligentes
+          ref: main
+          path: website
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            website/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: website/requirements-test.txt
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.47.9"
+          cache: true
+
+      - name: Set up Chrome for Angular tests
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+
+      - name: Install website dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Install mobile backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Install Python test dependencies
+        working-directory: website
+        run: python -m pip install -r requirements-test.txt
+
+      - name: Install Playwright Chromium
+        working-directory: website
+        run: python -m playwright install --with-deps chromium
+
+      - name: Create test report directory
+        run: mkdir -p website/artifacts/test-results
+
+      - name: Build Angular production website
+        id: website-build
+        continue-on-error: true
+        working-directory: website
+        run: npm run build
+
+      - name: Run Angular unit tests
+        id: angular
+        continue-on-error: true
+        working-directory: website
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          set +e
+          npm test -- --watch=false --browsers=ChromeHeadless > artifacts/test-results/angular-unit-tests.log 2>&1
+          result=$?
+          cat artifacts/test-results/angular-unit-tests.log
+          exit "$result"
+
+      - name: Run Playwright frontend checks
+        id: frontend
+        continue-on-error: true
+        working-directory: website
+        env:
+          TEST_RESULTS_DIR: artifacts/test-results
+          TEST_OBSERVATIONS_PATH: artifacts/test-results/frontend-observations.json
+        run: python -m pytest -m frontend --junitxml=artifacts/test-results/frontend-junit.xml
+
+      - name: Run website backend API contract checks
+        id: website-api
+        continue-on-error: true
+        working-directory: website
+        env:
+          TEST_RESULTS_DIR: artifacts/test-results
+          TEST_OBSERVATIONS_PATH: artifacts/test-results/backend-observations.json
+        run: python -m pytest -m backend --junitxml=artifacts/test-results/backend-junit.xml
+
+      - name: Run mobile caja roja test script
+        id: caja-roja
+        continue-on-error: true
+        run: ./scripts/pruebas/run-caja-roja.ps1
+        shell: pwsh
+
+      - name: Generate the two PDF reports
+        id: reports
+        if: always()
+        continue-on-error: true
+        working-directory: website
+        run: |
+          summary="$(find ../test-results/pruebas -path '*/caja-roja-*/summary.json' -type f -print -quit 2>/dev/null || true)"
+          if [ -z "$summary" ]; then
+            summary="$RUNNER_TEMP/redbox-summary-not-generated.json"
+          fi
+          python tools/build-deployment-test-reports.py \
+            --frontend-junit artifacts/test-results/frontend-junit.xml \
+            --backend-junit artifacts/test-results/backend-junit.xml \
+            --frontend-observations artifacts/test-results/frontend-observations.json \
+            --backend-observations artifacts/test-results/backend-observations.json \
+            --angular-log artifacts/test-results/angular-unit-tests.log \
+            --redbox-summary "$summary" \
+            --output-dir artifacts/test-results/reports
+
+      - name: Upload frontend and backend report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pruebas-frontend-backend-${{ github.run_number }}
+          path: website/artifacts/test-results/reports/pruebas-frontend-backend.pdf
+          if-no-files-found: warn
+
+      - name: Upload caja roja report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pruebas-caja-roja-${{ github.run_number }}
+          path: website/artifacts/test-results/reports/pruebas-caja-roja.pdf
+          if-no-files-found: warn
+
+      - name: Upload raw test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia-pruebas-bioMedica-${{ github.run_number }}
+          path: |
+            website/artifacts/test-results/
+            test-results/pruebas/caja-roja-*/
+          if-no-files-found: warn
+
+      - name: Enforce complete test gate
+        if: always()
+        env:
+          BUILD_RESULT: ${{ steps.website-build.outcome }}
+          ANGULAR_RESULT: ${{ steps.angular.outcome }}
+          FRONTEND_RESULT: ${{ steps.frontend.outcome }}
+          WEBSITE_API_RESULT: ${{ steps.website-api.outcome }}
+          CAJA_ROJA_RESULT: ${{ steps.caja-roja.outcome }}
+          REPORTS_RESULT: ${{ steps.reports.outcome }}
+        run: |
+          failed=0
+          for result in "$BUILD_RESULT" "$ANGULAR_RESULT" "$FRONTEND_RESULT" "$WEBSITE_API_RESULT" "$CAJA_ROJA_RESULT" "$REPORTS_RESULT"; do
+            if [ "$result" != "success" ]; then
+              echo "Required test stage did not pass: $result"
+              failed=1
+            fi
+          done
+          exit "$failed"

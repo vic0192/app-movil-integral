@@ -10,54 +10,49 @@ $flutter = Resolve-PracticeExecutable 'flutter'
 $npm = Resolve-PracticeExecutable 'npm'
 
 Invoke-PracticeStep `
-    -Label 'Wear OS: captura incompleta, nombre vacio, rangos y lectura vencida' `
+    -Label 'Wear OS: validacion completa de capturas, rangos, sensores y sincronizacion' `
     -Executable $flutter `
     -Arguments @(
-        'test', 'test/watch_capture_validation_test.dart',
-        '--plain-name', 'rejects', '--reporter', 'expanded'
+        'test', 'test/watch_capture_validation_test.dart', '--reporter=json'
     ) `
     -WorkingDirectory $script:PracticeRoot
 
 Invoke-PracticeStep `
-    -Label 'API de mediciones: rechaza datos invalidos y sesion expirada' `
+    -Label 'API de mediciones: autenticacion, rechazo de datos y permisos' `
     -Executable $flutter `
     -Arguments @(
-        'test', 'test/watch_capture_api_integration_test.dart',
-        '--plain-name', 'rejects', '--reporter', 'expanded'
+        'test', 'test/watch_capture_api_integration_test.dart', '--reporter=json'
     ) `
     -WorkingDirectory $script:PracticeRoot
 
 Invoke-PracticeStep `
-    -Label 'API de mediciones: HTTP 503 no se reporta como guardado exitoso' `
+    -Label 'API de mediciones: errores de servicio, timeout y estados HTTP' `
     -Executable $flutter `
     -Arguments @(
-        'test', 'test/watch_capture_error_integration_test.dart',
-        '--reporter', 'expanded'
+        'test', 'test/watch_capture_error_integration_test.dart', '--reporter=json'
     ) `
     -WorkingDirectory $script:PracticeRoot
 
 Invoke-PracticeStep `
-    -Label 'Conectividad: HTTP no saludable, error de conexion y timeout' `
+    -Label 'Conectividad: errores de red, recuperacion y respuestas no saludables' `
     -Executable $flutter `
     -Arguments @(
-        'test', 'test/supabase_connectivity_monitor_test.dart',
-        '--plain-name', 'reports', '--reporter', 'expanded'
+        'test', 'test/supabase_connectivity_monitor_test.dart', '--reporter=json'
     ) `
     -WorkingDirectory $script:PracticeRoot
 
 Invoke-PracticeStep `
-    -Label 'Reportes clinicos: rechazo de campos, identificadores y datos invalidos' `
+    -Label 'Reportes clinicos: validacion, duplicados y contenido invalido' `
     -Executable $flutter `
     -Arguments @(
-        'test', 'test/health_report_validation_test.dart',
-        '--plain-name', 'rejects', '--reporter', 'expanded'
+        'test', 'test/health_report_validation_test.dart', '--reporter=json'
     ) `
     -WorkingDirectory $script:PracticeRoot
 
 Invoke-PracticeStep `
     -Label 'API backend: suite completa, incluye validacion, sesion, rol y autorizacion' `
     -Executable $npm `
-    -Arguments @('test', '--prefix', 'backend') `
+    -Arguments @('test', '--prefix', 'backend', '--', '--test-reporter=tap') `
     -WorkingDirectory $script:PracticeRoot
 
 Write-Host ''
