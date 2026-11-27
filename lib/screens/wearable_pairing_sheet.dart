@@ -37,7 +37,12 @@ class _WearablePairingSheetState extends State<WearablePairingSheet> {
       final nodes = await WearOsDataLayer.connectedNodes();
       if (mounted) setState(() => _wearOsNodes = nodes);
     } catch (error) {
-      if (mounted) setState(() => _wearOsError = '$error');
+      if (mounted) {
+        setState(
+          () => _wearOsError =
+              'No se pudo consultar el reloj. Inténtalo de nuevo.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _loadingWearOsNodes = false);
     }
@@ -52,7 +57,12 @@ class _WearablePairingSheetState extends State<WearablePairingSheet> {
             'No se encontró Galaxy Wearable. Empareja el reloj desde la app del fabricante.';
       });
     } catch (error) {
-      if (mounted) setState(() => _wearOsError = '$error');
+      if (mounted) {
+        setState(
+          () => _wearOsError =
+              'No se pudo abrir Galaxy Wearable. Inténtalo de nuevo.',
+        );
+      }
     }
   }
 
@@ -61,7 +71,9 @@ class _WearablePairingSheetState extends State<WearablePairingSheet> {
     try {
       await widget.monitor.startScan();
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) {
+        setState(() => _error = 'No se pudo buscar el reloj. Inténtalo de nuevo.');
+      }
     }
   }
 
@@ -70,7 +82,9 @@ class _WearablePairingSheetState extends State<WearablePairingSheet> {
     try {
       await widget.monitor.connect(result);
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) {
+        setState(() => _error = 'No se pudo conectar el reloj. Inténtalo de nuevo.');
+      }
     }
   }
 

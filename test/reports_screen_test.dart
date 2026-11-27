@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:biomedica_app/data/clinical_video_call_repository.dart';
 import 'package:biomedica_app/data/supabase_report_repository.dart';
 import 'package:biomedica_app/models/app_user_profile.dart';
 import 'package:biomedica_app/models/health_report.dart';
@@ -203,18 +204,40 @@ void main() {
     expect(repository.reports, isEmpty);
   });
 
-  testWidgets('TC06 - búsqueda REP999 informa resultado vacío', (tester) async {
+  testWidgets('reportes no muestran un buscador global', (tester) async {
     repository.seed(_report());
     await _pumpScreen(tester, repository);
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('searchReport')),
-      'REP999',
+
+    expect(find.byKey(const ValueKey('searchReport')), findsNothing);
+    expect(find.byIcon(Icons.search_rounded), findsNothing);
+    expect(find.text('REP001'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('médicos pueden llamar al paciente asociado al reporte', (
+    tester,
+  ) async {
+    repository.currentRole = AppRole.doctor;
+    repository.seed(_report(ownerUid: 'patient-a'));
+    final calls = _FakeVideoCallRepository();
+
+    await _pumpScreen(
+      tester,
+      repository,
+      patientNames: const {'patient-a': 'Paciente asignado'},
+      callRepository: calls,
     );
     await tester.pumpAndSettle();
+    expect(find.text('Paciente: Paciente asignado'), findsOneWidget);
 
-    expect(find.text('No se encontró el reporte "rep999".'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Atender por llamada'));
+    await tester.pumpAndSettle();
+
+    expect(calls.requestedPatientUids, ['patient-a']);
+    expect(find.text('Invitación de videollamada enviada'), findsOneWidget);
+    await tester.tap(find.text('Cerrar'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('TC07 - pérdida de conexión informa error de escritura', (
@@ -291,6 +314,8 @@ Future<void> _pumpScreen(
   WidgetTester tester,
   ReportRepository repository, {
   List<String> chronicConditions = const [],
+  Map<String, String>? patientNames,
+  ClinicalVideoCallRepository? callRepository,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -299,25 +324,32 @@ Future<void> _pumpScreen(
           patientName: 'Paciente de prueba',
           chronicConditions: chronicConditions,
           repository: repository,
+          patientNames: patientNames,
+          callRepository: callRepository,
         ),
       ),
     ),
   );
 }
 
-HealthReport _report({String priority = 'Media'}) => HealthReport(
+HealthReport _report({
+  String priority = 'Media',
+  String? ownerUid,
+}) => HealthReport(
   id: 'REP001',
   equipment: 'Monitor cardiaco',
   description: 'No enciende la pantalla',
   priority: priority,
   createdAt: DateTime(2026, 10, 16),
   updatedAt: DateTime(2026, 10, 16),
+  ownerUid: ownerUid,
 );
 
 class _FakeReportRepository implements ReportRepository {
   final _controller = StreamController<List<HealthReport>>.broadcast();
   final List<HealthReport> reports = [];
   final List<String> createAttempts = [];
+  AppRole currentRole = AppRole.patient;
   ReportStoreException? queryError;
   ReportStoreException? createError;
 
@@ -325,7 +357,7 @@ class _FakeReportRepository implements ReportRepository {
   String? get ownerUid => 'test-owner';
 
   @override
-  AppRole? get role => AppRole.patient;
+  AppRole? get role => currentRole;
 
   @override
   Future<void> initialize() async {}
@@ -405,4 +437,32 @@ class _FakeReportRepository implements ReportRepository {
   }
 
   Future<void> close() => _controller.close();
+}
+
+class _FakeVideoCallRepository implements ClinicalVideoCallRepository {
+  final List<String> requestedPatientUids = [];
+
+  @override
+  Future<ClinicalVideoCall> createCall(String patientUid) async {
+    requestedPatientUids.add(patientUid);
+    return ClinicalVideoCall(
+      id: 'call-1',
+      staffUid: 'doctor-1',
+      patientUid: patientUid,
+      roomName: 'BioMedicaDemo-abcdefghijklmnopqrstuvwx',
+      status: 'ringing',
+      expiresAt: DateTime(2026, 11, 27, 18, 45),
+      createdAt: DateTime(2026, 11, 27, 18, 35),
+    );
+  }
+
+  @override
+  Future<void> respondToCall(
+    String callId, {
+    required bool accept,
+  }) async {}
+
+  @override
+  Stream<List<ClinicalVideoCall>> watchIncomingCalls() =>
+      Stream.value(const []);
 }

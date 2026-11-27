@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../bio_medica_colors.dart';
+import '../data/clinical_record_repository.dart';
 import '../data/supabase_measurement_repository.dart';
 import '../models/wearable_measurement.dart';
 
@@ -15,6 +16,7 @@ class MeasurementRecordsScreen extends StatefulWidget {
 class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
   final _repository = SupabaseMeasurementRepository();
   Stream<List<WearableMeasurement>>? _measurements;
+  Map<String, String> _patientNames = const {};
   String? _error;
 
   @override
@@ -30,7 +32,28 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
         setState(() => _measurements = _repository.watchMeasurements());
       }
     } catch (error) {
-      if (mounted) setState(() => _error = '$error');
+      if (mounted) {
+        setState(
+          () => _error =
+              'No se pudieron cargar las mediciones. Inténtalo más tarde.',
+        );
+      }
+      return;
+    }
+
+    try {
+      final clinicalRecords = ClinicalRecordRepository();
+      await clinicalRecords.initialize();
+      final patients = await clinicalRecords.loadPatients();
+      if (mounted) {
+        setState(
+          () => _patientNames = {
+            for (final patient in patients) patient.uid: patient.displayName,
+          },
+        );
+      }
+    } catch (error) {
+      debugPrint('Could not load measurement patient labels.');
     }
   }
 
@@ -42,7 +65,7 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
     if (error != null) {
       return _scrollState(
         Text(
-          'No se pudieron consultar las mediciones: $error',
+          'No se pudieron consultar las mediciones. Inténtalo más tarde.',
           textAlign: TextAlign.center,
           style: const TextStyle(color: BioMedicaColors.red),
         ),
@@ -58,7 +81,7 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
         if (snapshot.hasError) {
           return _scrollState(
             Text(
-              'No se pudieron leer las mediciones: ${snapshot.error}',
+              'No se pudieron leer las mediciones. Inténtalo de nuevo.',
               textAlign: TextAlign.center,
               style: const TextStyle(color: BioMedicaColors.red),
             ),
@@ -107,6 +130,7 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
         '${date.month.toString().padLeft(2, '0')}/${date.year} '
         '${date.hour.toString().padLeft(2, '0')}:'
         '${date.minute.toString().padLeft(2, '0')}';
+    final patientName = _patientNames[measurement.ownerUid];
     return Card(
       child: ListTile(
         leading: const Icon(
@@ -118,7 +142,7 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Paciente: ${measurement.ownerUid}\n'
+              'Paciente: ${patientName?.isNotEmpty == true ? patientName : 'Paciente'}\n'
               'Dispositivo: ${measurement.deviceName} · Fuente: ${measurement.source}'
               '${measurement.oxygenSaturationPercent == null ? '' : '\nSpO₂: ${measurement.oxygenSaturationPercent}%'}'
               '${measurement.bodyTemperatureCelsius == null ? '' : '\nTemperatura: ${measurement.bodyTemperatureCelsius!.toStringAsFixed(1)} °C'}',

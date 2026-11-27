@@ -10,6 +10,7 @@ import '../ble/wear_os_data_layer.dart';
 import '../data/api_report_repository.dart';
 import '../data/clinic_turn_repository.dart';
 import '../data/clinical_chat_repository.dart';
+import '../data/clinical_video_call_repository.dart';
 import '../data/reminder_repository.dart';
 import '../data/supabase_measurement_repository.dart';
 import '../data/supabase_config.dart';
@@ -20,6 +21,7 @@ import '../models/wearable_measurement.dart';
 import '../services/app_lock_service.dart';
 import '../services/health_home_widget.dart';
 import '../services/chat_message_notification_service.dart';
+import '../services/demo_video_call_service.dart';
 import '../services/firebase_chat_push_service.dart';
 import '../services/local_reminder_scheduler.dart';
 import '../widgets/turn_status_hero.dart';
@@ -42,6 +44,7 @@ class PatientShell extends StatefulWidget {
     this.measurementRepository,
     this.reportRepository,
     this.clinicTurnRepository,
+    this.callRepository,
     this.messageNotifier,
     this.appLockService,
     this.appLockEnabled = false,
@@ -57,6 +60,7 @@ class PatientShell extends StatefulWidget {
   final MeasurementRepository? measurementRepository;
   final ReportRepository? reportRepository;
   final ClinicTurnRepository? clinicTurnRepository;
+  final ClinicalVideoCallRepository? callRepository;
   final IncomingMessageNotifier? messageNotifier;
   final AppLockService? appLockService;
   final bool appLockEnabled;
@@ -73,6 +77,8 @@ class _PatientShellState extends State<PatientShell> {
       widget.reportRepository ?? ApiReportRepository();
   late final ClinicTurnRepository _clinicTurnRepository =
       widget.clinicTurnRepository ?? SupabaseClinicTurnRepository();
+  late final ClinicalVideoCallRepository _callRepository =
+      widget.callRepository ?? SupabaseClinicalVideoCallRepository();
   late final ClinicalChatRepository _clinicalChatRepository =
       SupabaseClinicalChatRepository();
   late final IncomingMessageNotifier _messageNotifier =
@@ -88,11 +94,14 @@ class _PatientShellState extends State<PatientShell> {
   StreamSubscription<List<WearableMeasurement>>? _measurementSubscription;
   StreamSubscription<List<HealthReport>>? _reportSubscription;
   StreamSubscription<List<ClinicalConversation>>? _conversationSubscription;
+  StreamSubscription<List<ClinicalVideoCall>>? _incomingCallSubscription;
   final Map<String, StreamSubscription<List<ClinicalMessage>>>
   _messageSubscriptions = {};
   final Set<String> _notifiedMessageIds = {};
   final Set<String> _processedWatchCaptureIds = {};
   final Set<String> _watchCaptureIdsInProgress = {};
+  final Set<String> _presentedCallIds = {};
+  final List<ClinicalVideoCall> _pendingIncomingCalls = [];
   FirebaseChatPushService? _pushService;
   final _chatScreenKey = GlobalKey<MiConsultaScreenState>();
   Stream<List<HealthReport>>? _reportsStream;
@@ -118,6 +127,7 @@ class _PatientShellState extends State<PatientShell> {
   String? _turnError;
   bool _turnLoading = true;
   bool _notificationPermissionWarningShown = false;
+  bool _incomingCallDialogOpen = false;
 
   @override
   void initState() {
@@ -140,6 +150,9 @@ class _PatientShellState extends State<PatientShell> {
       );
     }
     unawaited(_initializeReports());
+    if (!widget.isDemo && widget.patientUid.isNotEmpty) {
+      _startIncomingCallMonitor();
+    }
     _startChatNotificationMonitor();
     unawaited(_configurePushNotifications());
     unawaited(_refreshTurns());
@@ -164,6 +177,7 @@ class _PatientShellState extends State<PatientShell> {
     unawaited(_measurementSubscription?.cancel());
     unawaited(_reportSubscription?.cancel());
     unawaited(_conversationSubscription?.cancel());
+    unawaited(_incomingCallSubscription?.cancel());
     for (final subscription in _messageSubscriptions.values) {
       unawaited(subscription.cancel());
     }
@@ -272,6 +286,93 @@ class _PatientShellState extends State<PatientShell> {
     }
   }
 
+  void _startIncomingCallMonitor() {
+    try {
+      _incomingCallSubscription = _callRepository.watchIncomingCalls().listen(
+        (calls) {
+          for (final call in calls) {
+            if (_presentedCallIds.add(call.id)) {
+              _pendingIncomingCalls.add(call);
+            }
+          }
+          unawaited(_showNextIncomingCall());
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          debugPrint('Could not monitor incoming clinical calls.');
+          debugPrintStack(stackTrace: stackTrace);
+        },
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Could not start incoming clinical call monitoring.');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  Future<void> _showNextIncomingCall() async {
+    if (!mounted || _incomingCallDialogOpen || _pendingIncomingCalls.isEmpty) {
+      return;
+    }
+    final call = _pendingIncomingCalls.removeAt(0);
+    _incomingCallDialogOpen = true;
+    try {
+      final accept = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Llamada de consulta'),
+          content: const Text(
+            'El equipo médico te invita a una videollamada. Al aceptar, se '
+            'abrirá una sala pública de demostración. No compartas información '
+            'clínica o personal en esa sala.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Rechazar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.video_call_outlined),
+              label: const Text('Unirme'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || accept == null) return;
+      await _callRepository.respondToCall(call.id, accept: accept);
+      if (!accept) return;
+      final opened = await DemoVideoCallService.openInvite(call.inviteUrl);
+      if (!opened && mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo abrir la sala. Solicita otra invitación.'),
+          ),
+        );
+      }
+    } on ClinicalVideoCallException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Could not respond to an incoming clinical call.');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text('No se pudo abrir la llamada. Inténtalo de nuevo.'),
+          ),
+        );
+      }
+    } finally {
+      _incomingCallDialogOpen = false;
+      if (mounted && _pendingIncomingCalls.isNotEmpty) {
+        unawaited(_showNextIncomingCall());
+      }
+    }
+  }
+
   Future<void> _configurePushNotifications() async {
     if (widget.isDemo ||
         kIsWeb ||
@@ -356,9 +457,10 @@ class _PatientShellState extends State<PatientShell> {
         _turnLoading = false;
       });
     } catch (error) {
+      debugPrint('Could not load clinic turn status.');
       if (mounted) {
         setState(() {
-          _turnError = '$error';
+          _turnError = 'No se pudieron cargar los turnos. Inténtalo de nuevo.';
           _turnLoading = false;
         });
       }
@@ -393,7 +495,8 @@ class _PatientShellState extends State<PatientShell> {
           debugPrintStack(stackTrace: stackTrace);
           if (mounted) {
             setState(() {
-              _reportsError = '$error';
+              _reportsError =
+                  'No se pudieron cargar los reportes. Inténtalo de nuevo.';
               _reportsLoading = false;
             });
           }
@@ -404,7 +507,8 @@ class _PatientShellState extends State<PatientShell> {
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         setState(() {
-          _reportsError = '$error';
+          _reportsError =
+              'No se pudieron cargar los reportes. Inténtalo de nuevo.';
           _reportsLoading = false;
         });
       }
@@ -414,7 +518,7 @@ class _PatientShellState extends State<PatientShell> {
   bool get _hasRealData =>
       (_watchIsConnected && _watchHeartRate != null) ||
       _savedMeasurements.isNotEmpty ||
-      _healthConnectRecords.isNotEmpty;
+      (!kIsWeb && _healthConnectRecords.isNotEmpty);
 
   bool get _watchIsConnected =>
       _watchUpdatedAt != null &&
@@ -500,6 +604,7 @@ class _PatientShellState extends State<PatientShell> {
   }
 
   _VitalReading? _healthConnectVital(String dataType) {
+    if (kIsWeb) return null;
     final record = _latestHealthConnectRecord(dataType);
     if (record == null) return null;
     return _VitalReading(
@@ -574,8 +679,9 @@ class _PatientShellState extends State<PatientShell> {
     } catch (error, stackTrace) {
       debugPrint('No se pudo consultar la conexión del Galaxy Watch: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (mounted && _watchNodeError != '$error') {
-        setState(() => _watchNodeError = '$error');
+      const message = 'No se pudo consultar el reloj. Actualiza para reintentar.';
+      if (mounted && _watchNodeError != message) {
+        setState(() => _watchNodeError = message);
       }
     } finally {
       _refreshingWatchNode = false;
@@ -610,7 +716,9 @@ class _PatientShellState extends State<PatientShell> {
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo abrir Galaxy Wearable: $error')),
+          const SnackBar(
+            content: Text('No se pudo abrir Galaxy Wearable. Inténtalo de nuevo.'),
+          ),
         );
       }
     }
@@ -715,7 +823,8 @@ class _PatientShellState extends State<PatientShell> {
               debugPrintStack(stackTrace: stackTrace);
               if (mounted) {
                 setState(() {
-                  _measurementError = '$error';
+                  _measurementError =
+                      'No se pudo cargar el historial. Inténtalo de nuevo.';
                   _measurementsLoading = false;
                 });
               }
@@ -726,7 +835,8 @@ class _PatientShellState extends State<PatientShell> {
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) {
         setState(() {
-          _measurementError = '$error';
+          _measurementError =
+              'No se pudo cargar el historial. Inténtalo de nuevo.';
           _measurementsLoading = false;
         });
       }
@@ -762,16 +872,20 @@ class _PatientShellState extends State<PatientShell> {
           context,
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
-    } on FormatException catch (error) {
+    } on FormatException {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('La captura del reloj no es válida: $error')),
+          const SnackBar(
+            content: Text('La medición recibida no es válida. Vuelve a medir.'),
+          ),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo guardar la medición: $error')),
+          const SnackBar(
+            content: Text('No se pudo guardar la medición. Inténtalo de nuevo.'),
+          ),
         );
       }
     } finally {
@@ -836,10 +950,12 @@ class _PatientShellState extends State<PatientShell> {
           ),
         ),
       );
-    } on PlatformException catch (error) {
+    } on PlatformException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo solicitar el widget: $error')),
+        const SnackBar(
+          content: Text('No se pudo solicitar el widget. Inténtalo de nuevo.'),
+        ),
       );
     }
   }
@@ -872,7 +988,7 @@ class _PatientShellState extends State<PatientShell> {
           child: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
+              constraints: const BoxConstraints(maxWidth: 1120),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 220),
                 child: KeyedSubtree(key: ValueKey(_tab), child: pages[_tab]),
@@ -884,7 +1000,7 @@ class _PatientShellState extends State<PatientShell> {
       bottomNavigationBar: Center(
         heightFactor: 1,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: 1120),
           child: NavigationBar(
             selectedIndex: _tab,
             onDestinationSelected: (index) => setState(() => _tab = index),
@@ -939,14 +1055,14 @@ class _PatientShellState extends State<PatientShell> {
     const SizedBox(height: 18),
     _welcomeCard(),
     const SizedBox(height: 17),
-    if (_measurementError case final error?)
+    if (_measurementError != null)
       Text(
-        'No se pudieron cargar tus signos vitales: $error',
+        'No se pudieron cargar tus signos vitales. Inténtalo de nuevo.',
         style: const TextStyle(color: BioMedicaColors.red, fontSize: 12),
       )
     else if (!_measurementsLoading && !_hasRealData)
       const Text(
-        'Aún no hay mediciones registradas. Conecta un dispositivo para comenzar.',
+        'Aún no hay mediciones registradas. Realiza una medición desde la app móvil.',
         style: TextStyle(color: BioMedicaColors.muted, fontSize: 12),
       ),
     const SizedBox(height: 10),
@@ -957,22 +1073,24 @@ class _PatientShellState extends State<PatientShell> {
     ),
     const SizedBox(height: 8),
     _measurementInterpretationCard(),
-    const SizedBox(height: 18),
-    HealthConnectHomeSummary(onRecordsLoaded: _onHealthConnectRecordsLoaded),
-    const SizedBox(height: 18),
-    _sectionTitle(
-      'Galaxy Watch',
-      action: !kIsWeb && defaultTargetPlatform == TargetPlatform.android
-          ? 'Actualizar'
-          : null,
-      onTap: !kIsWeb && defaultTargetPlatform == TargetPlatform.android
-          ? () => _refreshWatchNode(showLoading: true)
-          : null,
-    ),
-    const SizedBox(height: 9),
-    _wearableCard(),
-    const SizedBox(height: 18),
-    _measurementInstructionsCard(),
+    if (!kIsWeb) ...[
+      const SizedBox(height: 18),
+      HealthConnectHomeSummary(onRecordsLoaded: _onHealthConnectRecordsLoaded),
+      const SizedBox(height: 18),
+      _sectionTitle(
+        'Galaxy Watch',
+        action: defaultTargetPlatform == TargetPlatform.android
+            ? 'Actualizar'
+            : null,
+        onTap: defaultTargetPlatform == TargetPlatform.android
+            ? () => _refreshWatchNode(showLoading: true)
+            : null,
+      ),
+      const SizedBox(height: 9),
+      _wearableCard(),
+      const SizedBox(height: 18),
+      _measurementInstructionsCard(),
+    ],
     const SizedBox(height: 20),
     _sectionTitle(
       'Reportes de salud',
@@ -1066,7 +1184,9 @@ class _PatientShellState extends State<PatientShell> {
         result.band == HeartRateBand.unavailable &&
             !_watchIsConnected &&
             _watchNode == null
-        ? 'Empareja el Galaxy Watch en Galaxy Wearable; BioMedica recibirá sus lecturas automáticamente.'
+        ? kIsWeb
+              ? 'Las mediciones guardadas desde la app móvil aparecerán aquí.'
+              : 'Empareja el Galaxy Watch en Galaxy Wearable; BioMedica recibirá sus lecturas automáticamente.'
         : result.message;
     final Color accent;
     final Color background;
@@ -1494,9 +1614,9 @@ class _PatientShellState extends State<PatientShell> {
   }
 
   Widget _homeReportsSummary() {
-    if (_reportsError case final error?) {
+    if (_reportsError != null) {
       return Text(
-        'No se pudieron cargar tus reportes: $error',
+        'No se pudieron cargar tus reportes. Inténtalo de nuevo.',
         style: const TextStyle(color: BioMedicaColors.red, fontSize: 12),
       );
     }
@@ -1550,9 +1670,9 @@ class _PatientShellState extends State<PatientShell> {
           child: CircularProgressIndicator(),
         ),
       )
-    else if (_measurementError case final error?)
+    else if (_measurementError != null)
       Text(
-        'No se pudo cargar el historial: $error',
+        'No se pudo cargar el historial. Inténtalo de nuevo.',
         style: const TextStyle(color: BioMedicaColors.red, fontSize: 12),
       )
     else if (_savedMeasurements.isEmpty)

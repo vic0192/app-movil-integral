@@ -55,8 +55,10 @@ class SupabaseReminderRepository implements ReminderRepository {
           .eq('owner_uid', _ownerUid)
           .order('medication_name');
       return rows.map(MedicationReminder.fromMap).toList(growable: false);
-    } on PostgrestException catch (error) {
-      throw ReminderStoreException(error.message);
+    } on PostgrestException {
+      throw const ReminderStoreException(
+        'No se pudieron cargar los recordatorios. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -84,8 +86,10 @@ class SupabaseReminderRepository implements ReminderRepository {
           .select()
           .single();
       return MedicationReminder.fromMap(result);
-    } on PostgrestException catch (error) {
-      throw ReminderStoreException(error.message);
+    } on PostgrestException {
+      throw const ReminderStoreException(
+        'No se pudo guardar el recordatorio. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -97,8 +101,10 @@ class SupabaseReminderRepository implements ReminderRepository {
           .delete()
           .eq('id', id)
           .eq('owner_uid', _ownerUid);
-    } on PostgrestException catch (error) {
-      throw ReminderStoreException(error.message);
+    } on PostgrestException {
+      throw const ReminderStoreException(
+        'No se pudo eliminar el recordatorio. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -113,8 +119,10 @@ class SupabaseReminderRepository implements ReminderRepository {
       return result == null
           ? null
           : MeasurementReminderSettings.fromMap(result);
-    } on PostgrestException catch (error) {
-      throw ReminderStoreException(error.message);
+    } on PostgrestException {
+      throw const ReminderStoreException(
+        'No se pudieron cargar los ajustes de medición. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -140,8 +148,10 @@ class SupabaseReminderRepository implements ReminderRepository {
           .select()
           .single();
       return MeasurementReminderSettings.fromMap(result);
-    } on PostgrestException catch (error) {
-      throw ReminderStoreException(error.message);
+    } on PostgrestException {
+      throw const ReminderStoreException(
+        'No se pudieron guardar los ajustes de medición. Inténtalo de nuevo.',
+      );
     }
   }
 }

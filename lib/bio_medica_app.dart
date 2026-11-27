@@ -112,7 +112,8 @@ class _BioMedicaAppState extends State<BioMedicaApp>
       } catch (error) {
         if (mounted) {
           setState(() {
-            _restoreError = '$error';
+            _restoreError =
+                'No se pudo consultar la protección de la app. Inténtalo de nuevo.';
             _appLockLoadFailed = true;
           });
         }
@@ -133,7 +134,8 @@ class _BioMedicaAppState extends State<BioMedicaApp>
     } catch (error) {
       if (mounted) {
         setState(() {
-          _restoreError = '$error';
+          _restoreError =
+              'No se pudo restaurar la sesión. Inténtalo de nuevo.';
           _appLockEnabled = lockEnabled;
           _appLocked = false;
           _appLockLoadFailed = false;
@@ -362,7 +364,7 @@ class _StaffShellState extends State<_StaffShell> {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
+            constraints: const BoxConstraints(maxWidth: 1120),
             child: RefreshIndicator(
               onRefresh: _refresh,
               notificationPredicate: (notification) =>
@@ -379,6 +381,9 @@ class _StaffShellState extends State<_StaffShell> {
                   ClinicalRecordScreen(
                     key: ValueKey('clinical-record-$_refreshKey'),
                     canEdit: widget.profile.role == AppRole.doctor,
+                    canCall:
+                        widget.profile.role == AppRole.doctor ||
+                        widget.profile.role == AppRole.admin,
                   ),
                   if (widget.profile.role == AppRole.admin)
                     AdminUsersScreen(key: ValueKey('users-$_refreshKey')),

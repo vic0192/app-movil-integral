@@ -76,7 +76,7 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = '$error';
+        _error = 'No se pudieron cargar los médicos asignados. Inténtalo de nuevo.';
         _loadingDoctors = false;
       });
     }
@@ -104,7 +104,7 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = '$error';
+        _error = 'No se pudo iniciar la conversación. Inténtalo de nuevo.';
         _sending = false;
       });
     }
@@ -134,7 +134,7 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = '$error';
+        _error = 'No se pudo enviar el mensaje. Inténtalo de nuevo.';
         _sending = false;
       });
     }
@@ -200,7 +200,9 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo abrir la videollamada: $error')),
+          const SnackBar(
+            content: Text('No se pudo abrir la videollamada. Inténtalo de nuevo.'),
+          ),
         );
       }
     }
@@ -231,7 +233,9 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
     stream: _conversations,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
-        return _messageState('No se pudieron cargar las conversaciones: ${snapshot.error}');
+        return _messageState(
+          'No se pudieron cargar las conversaciones. Inténtalo de nuevo.',
+        );
       }
       if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
         return _scrollState(const CircularProgressIndicator());
@@ -335,7 +339,9 @@ class MiConsultaScreenState extends State<MiConsultaScreen> {
           stream: _messages ??= _repository.watchMessages(conversation.id),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return _messageState('No se pudieron recibir los mensajes: ${snapshot.error}');
+              return _messageState(
+                'No se pudieron recibir los mensajes. Inténtalo de nuevo.',
+              );
             }
             if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
               return _scrollState(const CircularProgressIndicator());

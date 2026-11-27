@@ -145,8 +145,10 @@ class SupabaseClinicalChatRepository implements ClinicalChatRepository {
         );
       }
       return result;
-    } on PostgrestException catch (error) {
-      throw ClinicalChatException(error.message);
+    } on PostgrestException {
+      throw const ClinicalChatException(
+        'No se pudieron cargar los médicos asignados. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -191,8 +193,10 @@ class SupabaseClinicalChatRepository implements ClinicalChatRepository {
         );
       }
       return id;
-    } on PostgrestException catch (error) {
-      throw ClinicalChatException(error.message);
+    } on PostgrestException {
+      throw const ClinicalChatException(
+        'No se pudo iniciar la conversación. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -235,8 +239,10 @@ class SupabaseClinicalChatRepository implements ClinicalChatRepository {
           'El mensaje se guardó, pero no se obtuvo un ID para notificar.',
         );
       }
-    } on PostgrestException catch (error) {
-      throw ClinicalChatException(error.message);
+    } on PostgrestException {
+      throw const ClinicalChatException(
+        'No se pudo enviar el mensaje. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -267,8 +273,10 @@ class SupabaseClinicalChatRepository implements ClinicalChatRepository {
       return await supabaseClient.storage
           .from('clinical-attachments')
           .createSignedUrl(path, 300);
-    } on StorageException catch (error) {
-      throw ClinicalChatException(error.message);
+    } on StorageException {
+      throw const ClinicalChatException(
+        'No se pudo abrir el archivo adjunto. Inténtalo de nuevo.',
+      );
     }
   }
 }

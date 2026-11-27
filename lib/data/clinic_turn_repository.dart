@@ -97,8 +97,10 @@ class SupabaseClinicTurnRepository implements ClinicTurnRepository {
           .limit(1)
           .maybeSingle();
       return result == null ? null : ClinicTurn.fromMap(result);
-    } on PostgrestException catch (error) {
-      throw ClinicTurnException(error.message);
+    } on PostgrestException {
+      throw const ClinicTurnException(
+        'No se pudo consultar tu turno. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -115,8 +117,10 @@ class SupabaseClinicTurnRepository implements ClinicTurnRepository {
           .whereType<Map>()
           .map((row) => ClinicTurn.fromMap(Map<String, dynamic>.from(row)))
           .toList(growable: false);
-    } on PostgrestException catch (error) {
-      throw ClinicTurnException(error.message);
+    } on PostgrestException {
+      throw const ClinicTurnException(
+        'No se pudo consultar la lista de turnos. Inténtalo de nuevo.',
+      );
     }
   }
 }

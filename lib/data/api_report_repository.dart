@@ -69,9 +69,9 @@ class ApiReportRepository implements ReportRepository {
             );
           }
           return accessToken;
-        } on AuthException catch (error) {
+        } on AuthException {
           throw CoreApiException(
-            'No se pudo renovar tu sesión de Supabase: ${error.message}',
+              'Tu sesión expiró. Inicia sesión nuevamente.',
             statusCode: 401,
           );
         }
@@ -91,9 +91,9 @@ class ApiReportRepository implements ReportRepository {
       try {
         final refreshed = await activeClient.auth.refreshSession();
         return refreshed.session?.accessToken;
-      } on AuthException catch (error) {
+      } on AuthException {
         throw CoreApiException(
-          'No se pudo renovar tu sesión de Supabase: ${error.message}',
+          'Tu sesión expiró. Inicia sesión nuevamente.',
           statusCode: 401,
         );
       }
@@ -264,9 +264,21 @@ class ApiReportRepository implements ReportRepository {
 
   ReportStoreException _mapApiError(CoreApiException error) =>
       switch (error.statusCode) {
-        401 => ReportStoreException(error.message, code: 'unauthenticated'),
-        403 => ReportStoreException(error.message, code: 'permission-denied'),
-        null => ReportStoreException(error.message, code: 'unavailable'),
-        _ => ReportStoreException(error.message, code: 'api-error'),
+        401 => const ReportStoreException(
+          'Tu sesión expiró. Inicia sesión nuevamente.',
+          code: 'unauthenticated',
+        ),
+        403 => const ReportStoreException(
+          'No tienes permiso para realizar esta acción.',
+          code: 'permission-denied',
+        ),
+        null => const ReportStoreException(
+          'No se pudo conectar con el servicio de reportes. Inténtalo de nuevo.',
+          code: 'unavailable',
+        ),
+        _ => const ReportStoreException(
+          'No se pudo completar la operación de reportes. Inténtalo de nuevo.',
+          code: 'api-error',
+        ),
       };
 }
