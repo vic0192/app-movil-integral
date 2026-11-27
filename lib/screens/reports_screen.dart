@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../bio_medica_colors.dart';
@@ -69,8 +68,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
       await _repository.initialize();
       var patientNames = widget.patientNames ?? const <String, String>{};
-      if (widget.patientNames == null &&
-          _repository.role != AppRole.patient) {
+      if (widget.patientNames == null && _repository.role != AppRole.patient) {
         try {
           final clinicalRecords = ClinicalRecordRepository();
           await clinicalRecords.initialize();
@@ -337,7 +335,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
         if (snapshot.hasError) {
           return _messageState(
             icon: Icons.error_outline_rounded,
-            message: 'No se pudieron consultar los reportes. Inténtalo de nuevo.',
+            message:
+                'No se pudieron consultar los reportes. Inténtalo de nuevo.',
             action: TextButton.icon(
               onPressed: () =>
                   setState(() => _reports = _repository.watchReports()),

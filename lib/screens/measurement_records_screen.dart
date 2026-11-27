@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../bio_medica_colors.dart';
@@ -48,9 +47,9 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
       final patients = await clinicalRecords.loadPatients();
       if (mounted) {
         setState(
-              () => _patientNames = {
-                for (final patient in patients) patient.uid: patient.displayName,
-              },
+          () => _patientNames = {
+            for (final patient in patients) patient.uid: patient.displayName,
+          },
         );
       }
     } catch (error) {
