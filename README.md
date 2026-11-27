@@ -268,6 +268,11 @@ versión fija de Flutter, compila la web y la copia al backend para que ambos se
 sirvan desde el mismo origen. Mantén las variables existentes del servicio y
 la conexión con la base actual; no es necesario crear ni migrar otra base.
 
+Render no aplica migraciones de Supabase. Para evitar códigos de turno
+duplicados, ejecuta
+[20261127010000_fix_clinic_turn_permissions.sql](supabase/migrations/20261127010000_fix_clinic_turn_permissions.sql)
+en el SQL Editor del proyecto Supabase antes de volver a crear turnos.
+
 La web carga únicamente la URL y la clave **publicable** de Supabase desde
 `/config.json`; nunca expongas `service_role` ni credenciales de base de datos
 en el frontend. Después del despliegue comprueba `/`, `/config.json` y

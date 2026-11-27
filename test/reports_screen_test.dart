@@ -240,6 +240,31 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('administradores pueden llamar desde un reporte clínico', (
+    tester,
+  ) async {
+    repository.currentRole = AppRole.admin;
+    repository.seed(_report(ownerUid: 'patient-a'));
+    final calls = _FakeVideoCallRepository();
+
+    await _pumpScreen(
+      tester,
+      repository,
+      patientNames: const {'patient-a': 'Paciente asignado'},
+      callRepository: calls,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Paciente: Paciente asignado'), findsOneWidget);
+
+    await tester.tap(find.text('Atender por llamada'));
+    await tester.pumpAndSettle();
+
+    expect(calls.requestedPatientUids, ['patient-a']);
+    expect(find.text('Invitación de videollamada enviada'), findsOneWidget);
+    await tester.tap(find.text('Cerrar'));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('TC07 - pérdida de conexión informa error de escritura', (
     tester,
   ) async {
@@ -332,18 +357,16 @@ Future<void> _pumpScreen(
   );
 }
 
-HealthReport _report({
-  String priority = 'Media',
-  String? ownerUid,
-}) => HealthReport(
-  id: 'REP001',
-  equipment: 'Monitor cardiaco',
-  description: 'No enciende la pantalla',
-  priority: priority,
-  createdAt: DateTime(2026, 10, 16),
-  updatedAt: DateTime(2026, 10, 16),
-  ownerUid: ownerUid,
-);
+HealthReport _report({String priority = 'Media', String? ownerUid}) =>
+    HealthReport(
+      id: 'REP001',
+      equipment: 'Monitor cardiaco',
+      description: 'No enciende la pantalla',
+      priority: priority,
+      createdAt: DateTime(2026, 10, 16),
+      updatedAt: DateTime(2026, 10, 16),
+      ownerUid: ownerUid,
+    );
 
 class _FakeReportRepository implements ReportRepository {
   final _controller = StreamController<List<HealthReport>>.broadcast();
@@ -457,10 +480,7 @@ class _FakeVideoCallRepository implements ClinicalVideoCallRepository {
   }
 
   @override
-  Future<void> respondToCall(
-    String callId, {
-    required bool accept,
-  }) async {}
+  Future<void> respondToCall(String callId, {required bool accept}) async {}
 
   @override
   Stream<List<ClinicalVideoCall>> watchIncomingCalls() =>

@@ -581,9 +581,10 @@ function createApp({
           },
           (error) => {
             if (closed) return;
+            console.error('Report stream failed:', error);
             response.write(
               `data: ${JSON.stringify({
-                error: `No se pudieron actualizar los reportes: ${error.message}`,
+                error: 'No se pudieron actualizar los reportes. Inténtalo de nuevo.',
               })}\n\n`,
             );
             closeStream();

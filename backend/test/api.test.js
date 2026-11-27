@@ -15,6 +15,7 @@ const jwtSecret = 'test-secret-with-at-least-32-bytes-long';
 const users = new Map();
 let server;
 let baseUrl;
+let reportStreamFailure;
 
 const pool = {
   async query(sql, values = []) {
@@ -51,8 +52,14 @@ before(async () => {
   const reportCollection = {
     limit: () => ({ get: async () => ({ docs: [] }) }),
     where: () => reportCollection,
-    onSnapshot: (onData) => {
-      queueMicrotask(() => onData({ docs: [] }));
+    onSnapshot: (onData, onError) => {
+      queueMicrotask(() => {
+        if (reportStreamFailure) {
+          onError(reportStreamFailure);
+        } else {
+          onData({ docs: [] });
+        }
+      });
       return () => {};
     },
   };
@@ -160,6 +167,35 @@ test('report event stream sends the initial authorized snapshot', async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type'), /text\/event-stream/);
   assert.match(new TextDecoder().decode(value), /"reports":\[\]/);
+});
+
+test('report event stream hides internal error details', async () => {
+  reportStreamFailure = new Error('clinic_turns_ticket_code_key');
+  const uid = 'admin-stream-error-test-id';
+  users.set(uid, {
+    id: uid,
+    display_name: 'Admin Demo',
+    email: 'admin-stream-error@example.com',
+    role: 'admin',
+    password_hash: 'unused',
+  });
+  const token = jwt.sign({ sub: uid }, jwtSecret, { issuer: 'biomedica-api' });
+
+  try {
+    const response = await fetch(`${baseUrl}/api/reports/stream`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const reader = response.body.getReader();
+    const { value } = await reader.read();
+    await reader.cancel();
+    const event = new TextDecoder().decode(value);
+
+    assert.equal(response.status, 200);
+    assert.match(event, /No se pudieron actualizar los reportes/);
+    assert.doesNotMatch(event, /clinic_turns_ticket_code_key/);
+  } finally {
+    reportStreamFailure = null;
+  }
 });
 
 test('server rejects invalid measurements, report fields, and document IDs', () => {
