@@ -76,7 +76,10 @@ class SupabaseMeasurementRepository implements MeasurementRepository {
           .single();
       return result['id'] as String;
     } on PostgrestException catch (error) {
-      throw MeasurementStoreException(error.message, code: error.code);
+      throw MeasurementStoreException(
+        'No se pudo guardar la medición. Inténtalo de nuevo.',
+        code: error.code,
+      );
     }
   }
 

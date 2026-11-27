@@ -30,7 +30,11 @@ class RelationalAccountRepository implements AccountRepository {
       });
       return await _saveSession(response);
     } on CoreApiException catch (error) {
-      throw AccountRepositoryException(error.message);
+      throw AccountRepositoryException(
+        error.statusCode == 401
+            ? 'Correo o contraseña incorrectos.'
+            : 'No se pudo completar el acceso. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -48,7 +52,11 @@ class RelationalAccountRepository implements AccountRepository {
       });
       return await _saveSession(response);
     } on CoreApiException catch (error) {
-      throw AccountRepositoryException(error.message);
+      throw AccountRepositoryException(
+        error.statusCode == 409
+            ? 'Ya existe una cuenta con ese correo.'
+            : 'No se pudo crear la cuenta. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -78,7 +86,9 @@ class RelationalAccountRepository implements AccountRepository {
       return _profile(user);
     } on CoreApiException catch (error) {
       if (error.statusCode == 401) await _api.clearToken();
-      throw AccountRepositoryException(error.message);
+      throw const AccountRepositoryException(
+        'No se pudo restaurar la sesión. Inicia sesión nuevamente.',
+      );
     }
   }
 

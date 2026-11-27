@@ -44,7 +44,10 @@ class _AppLockUnlockScreenState extends State<AppLockUnlockScreen> {
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _error = 'No se pudo validar la contraseña: $error');
+        setState(
+          () => _error =
+              'No se pudo validar la contraseña. Inténtalo de nuevo.',
+        );
       }
     } finally {
       if (mounted) setState(() => _checking = false);
@@ -187,7 +190,10 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
       if (mounted) setState(() => _enabled = enabled);
     } catch (error) {
       if (mounted) {
-        setState(() => _error = 'No se pudo consultar la protección: $error');
+        setState(
+          () => _error =
+              'No se pudo consultar la protección. Inténtalo de nuevo.',
+        );
       }
     }
   }
@@ -221,7 +227,9 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
       widget.onChanged(true);
       Navigator.of(context).pop();
     } catch (error) {
-      if (mounted) setState(() => _error = 'No se pudo guardar: $error');
+      if (mounted) {
+        setState(() => _error = 'No se pudo guardar. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -242,7 +250,9 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen> {
       widget.onChanged(false);
       Navigator.of(context).pop();
     } catch (error) {
-      if (mounted) setState(() => _error = 'No se pudo desactivar: $error');
+      if (mounted) {
+        setState(() => _error = 'No se pudo desactivar. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

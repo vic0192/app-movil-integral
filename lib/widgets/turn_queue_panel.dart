@@ -30,10 +30,10 @@ class TurnQueuePanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (error case final message?)
+        if (error != null)
           _stateCard(
             icon: Icons.cloud_off_outlined,
-            message: 'No se pudieron cargar los turnos: $message',
+            message: 'No se pudieron cargar los turnos. Inténtalo de nuevo.',
           ),
         if (turn != null)
           TurnStatusHero(

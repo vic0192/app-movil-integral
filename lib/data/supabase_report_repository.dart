@@ -102,7 +102,10 @@ class SupabaseReportRepository implements ReportRepository {
         }
         throw DuplicateReportIdException(reportId);
       }
-      throw ReportStoreException(error.message, code: error.code);
+      throw ReportStoreException(
+        'No se pudo guardar el reporte. Inténtalo de nuevo.',
+        code: error.code,
+      );
     }
   }
 
@@ -121,7 +124,10 @@ class SupabaseReportRepository implements ReportRepository {
           })
           .eq('id', normalizedId);
     } on PostgrestException catch (error) {
-      throw ReportStoreException(error.message, code: error.code);
+      throw ReportStoreException(
+        'No se pudo actualizar el reporte. Inténtalo de nuevo.',
+        code: error.code,
+      );
     }
   }
 
@@ -135,7 +141,10 @@ class SupabaseReportRepository implements ReportRepository {
           .delete()
           .eq('id', normalizedId);
     } on PostgrestException catch (error) {
-      throw ReportStoreException(error.message, code: error.code);
+      throw ReportStoreException(
+        'No se pudo eliminar el reporte. Inténtalo de nuevo.',
+        code: error.code,
+      );
     }
   }
 

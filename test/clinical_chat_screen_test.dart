@@ -51,7 +51,10 @@ void main() {
     await tester.tap(find.byTooltip('Abrir chat'));
     await tester.pumpAndSettle();
 
-    expect(find.text('No se pudo iniciar la conversación.'), findsOneWidget);
+    expect(
+      find.text('No se pudo iniciar la conversación. Inténtalo de nuevo.'),
+      findsOneWidget,
+    );
     expect(repository.messages, isEmpty);
   });
 

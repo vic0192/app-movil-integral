@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../bio_medica_colors.dart';
 import '../data/api_report_repository.dart';
+import '../data/clinical_video_call_repository.dart';
 import '../data/clinical_record_repository.dart';
 import '../data/health_connect_repository.dart';
 import '../data/supabase_measurement_repository.dart';
@@ -11,17 +12,21 @@ import '../models/clinical_record_entry.dart';
 import '../models/health_connect_record.dart';
 import '../models/health_report.dart';
 import '../models/wearable_measurement.dart';
-import '../services/demo_video_call_service.dart';
+import '../widgets/clinical_call_invite_dialog.dart';
 
 class ClinicalRecordScreen extends StatefulWidget {
   const ClinicalRecordScreen({
     super.key,
     required this.canEdit,
+    this.canCall = false,
     this.initialPatientUid,
+    this.callRepository,
   });
 
   final bool canEdit;
+  final bool canCall;
   final String? initialPatientUid;
+  final ClinicalVideoCallRepository? callRepository;
 
   @override
   State<ClinicalRecordScreen> createState() => _ClinicalRecordScreenState();
@@ -32,6 +37,8 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
   final _measurementRepository = SupabaseMeasurementRepository();
   final _healthConnectRepository = HealthConnectRepository();
   final _reportRepository = ApiReportRepository();
+  late final ClinicalVideoCallRepository _callRepository =
+      widget.callRepository ?? SupabaseClinicalVideoCallRepository();
   List<AppUserProfile> _patients = const [];
   String? _selectedPatientUid;
   Stream<List<WearableMeasurement>>? _measurements;
@@ -51,21 +58,23 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
       await _recordRepository.initialize();
       final patients = await _recordRepository.loadPatients();
       await _measurementRepository.initialize();
-      await _healthConnectRepository.initialize();
+      if (!kIsWeb) await _healthConnectRepository.initialize();
       await _reportRepository.initialize();
       if (!mounted) return;
       setState(() {
         _patients = patients;
         _selectedPatientUid = _initialPatient(patients);
         _measurements = _measurementRepository.watchMeasurements();
-        _healthRecords = _healthConnectRepository.watchRecordsForClinicians();
+        _healthRecords = kIsWeb
+            ? Stream.value(const <SharedHealthConnectRecord>[])
+            : _healthConnectRepository.watchRecordsForClinicians();
         _reports = _reportRepository.watchReports();
         _loading = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = '$error';
+        _error = 'No se pudo cargar el expediente. Inténtalo de nuevo.';
         _loading = false;
       });
     }
@@ -93,7 +102,7 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (_error case final error?) {
-      return _stateMessage('No se pudo cargar el expediente: $error');
+      return _stateMessage(error);
     }
     if (_patients.isEmpty) {
       return _stateMessage('No hay pacientes autorizados para este acceso.');
@@ -138,13 +147,13 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
                 ),
                 const SizedBox(height: 8),
                 _patientBackground(patient),
-                if (widget.canEdit)
+                if (widget.canCall)
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
-                      onPressed: _startDemoCall,
+                      onPressed: () => _startPatientCall(patient),
                       icon: const Icon(Icons.video_call_outlined),
-                      label: const Text('Videollamada demo'),
+                      label: const Text('Atender por llamada'),
                     ),
                   ),
                 const SizedBox(height: 8),
@@ -230,7 +239,7 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return _stateMessage(
-                'No se pudo leer el expediente: ${snapshot.error}',
+                'No se pudo leer el expediente. Inténtalo de nuevo.',
               );
             }
             if (!snapshot.hasData) {
@@ -262,7 +271,7 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
     builder: (context, measurementSnapshot) {
       if (measurementSnapshot.hasError) {
         return _stateMessage(
-          'No se pudieron leer las mediciones: ${measurementSnapshot.error}',
+          'No se pudieron leer las mediciones. Inténtalo de nuevo.',
         );
       }
       if (!measurementSnapshot.hasData) {
@@ -276,8 +285,7 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
         builder: (context, healthSnapshot) {
           if (healthSnapshot.hasError) {
             return _stateMessage(
-              'No se pudieron leer los datos sincronizados: '
-              '${healthSnapshot.error}',
+              'No se pudieron leer los datos sincronizados. Inténtalo de nuevo.',
             );
           }
           if (!healthSnapshot.hasData) {
@@ -307,7 +315,9 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
     stream: _reports,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
-        return _stateMessage('No se pudieron leer los reportes: ${snapshot.error}');
+        return _stateMessage(
+          'No se pudieron leer los reportes. Inténtalo de nuevo.',
+        );
       }
       if (!snapshot.hasData) {
         return const Center(child: CircularProgressIndicator());
@@ -415,69 +425,30 @@ class _ClinicalRecordScreenState extends State<ClinicalRecordScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo guardar en el expediente: $error')),
+        const SnackBar(
+          content: Text('No se pudo guardar en el expediente. Inténtalo de nuevo.'),
+        ),
       );
     }
   }
 
-  Future<void> _startDemoCall() async {
-    final invite = DemoVideoCallService.createInvite();
-    final action = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Videollamada de demostración'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Jitsi público es solo para demostración. No ingreses nombres, '
-              'diagnósticos ni información clínica. Comparte este enlace con '
-              'el paciente por un canal seguro; la sala no verifica identidades.',
-            ),
-            const SizedBox(height: 12),
-            SelectableText(invite.toString()),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton.icon(
-            onPressed: () => Navigator.pop(context, 'copy'),
-            icon: const Icon(Icons.copy_rounded),
-            label: const Text('Copiar enlace'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(context, 'join'),
-            icon: const Icon(Icons.video_call_rounded),
-            label: const Text('Abrir sala'),
-          ),
-        ],
-      ),
-    );
-    if (!mounted || action == null) return;
+  Future<void> _startPatientCall(AppUserProfile patient) async {
     try {
-      if (action == 'copy') {
-        await Clipboard.setData(ClipboardData(text: invite.toString()));
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Enlace copiado. Compártelo con el paciente.')),
-          );
-        }
-        return;
-      }
-      final opened = await DemoVideoCallService.openInvite(invite.toString());
-      if (!opened && mounted) {
+      final call = await _callRepository.createCall(patient.uid);
+      if (!mounted) return;
+      await showClinicalCallInviteDialog(context, call);
+    } on ClinicalVideoCallException catch (error) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo abrir la sala de video.')),
+          SnackBar(content: Text(error.message)),
         );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo iniciar la videollamada: $error')),
+          const SnackBar(
+            content: Text('No se pudo iniciar la videollamada. Inténtalo de nuevo.'),
+          ),
         );
       }
     }

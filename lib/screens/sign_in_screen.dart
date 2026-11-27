@@ -116,7 +116,9 @@ class _SignInScreenState extends State<SignInScreen> {
     } on AccountRepositoryException catch (error) {
       if (mounted) _showError(error.message);
     } catch (error) {
-      if (mounted) _showError('No se pudo completar el acceso: $error');
+      if (mounted) {
+        _showError('No se pudo completar el acceso. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -214,10 +216,10 @@ class _SignInScreenState extends State<SignInScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _brand(),
-                  if (widget.initialError case final error?) ...[
+                  if (widget.initialError != null) ...[
                     const SizedBox(height: 12),
                     Text(
-                      'No se pudo restaurar la sesión: $error',
+                      'No se pudo restaurar la sesión. Inténtalo de nuevo.',
                       style: const TextStyle(
                         color: BioMedicaColors.red,
                         fontSize: 12,

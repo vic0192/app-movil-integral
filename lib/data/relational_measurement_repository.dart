@@ -34,7 +34,12 @@ class RelationalMeasurementRepository implements MeasurementRepository {
         ),
       );
     } on CoreApiException catch (error) {
-      throw MeasurementStoreException(error.message);
+      throw MeasurementStoreException(
+        _apiErrorMessage(
+          error,
+          fallback: 'No se pudo validar la sesión para consultar mediciones.',
+        ),
+      );
     }
   }
 
@@ -59,7 +64,12 @@ class RelationalMeasurementRepository implements MeasurementRepository {
           )
           .toList(growable: false);
     } on CoreApiException catch (error) {
-      throw MeasurementStoreException(error.message);
+      throw MeasurementStoreException(
+        _apiErrorMessage(
+          error,
+          fallback: 'No se pudieron consultar las mediciones. Inténtalo de nuevo.',
+        ),
+      );
     }
   }
 
@@ -87,8 +97,23 @@ class RelationalMeasurementRepository implements MeasurementRepository {
       }
       return data['id'] as String;
     } on CoreApiException catch (error) {
-      throw MeasurementStoreException(error.message);
+      throw MeasurementStoreException(
+        _apiErrorMessage(
+          error,
+          fallback: 'No se pudo guardar la medición. Inténtalo de nuevo.',
+        ),
+      );
     }
+  }
+
+  String _apiErrorMessage(CoreApiException error, {required String fallback}) {
+    if (error.statusCode == 401) {
+      return 'La sesión no es válida. Inicia sesión nuevamente.';
+    }
+    if (error.statusCode == 503) {
+      return 'Almacenamiento temporalmente no disponible.';
+    }
+    return fallback;
   }
 }
 

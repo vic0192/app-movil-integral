@@ -196,9 +196,14 @@ class SupabaseAccountRepository implements AccountRepository {
     if (message.contains('email not confirmed')) {
       return 'Confirma tu correo desde el enlace que te enviamos.';
     }
-    return error.message;
+    return 'No se pudo completar la autenticación. Verifica tus datos e '
+        'inténtalo de nuevo.';
   }
 
-  String _dataMessage(PostgrestException error) =>
-      'No se pudo cargar el perfil de Supabase: ${error.message}';
+  String _dataMessage(PostgrestException error) {
+    debugPrint(
+      'Profile lookup failed (database code: ${error.code ?? 'unknown'}).',
+    );
+    return 'No se pudo cargar el perfil. Inténtalo de nuevo más tarde.';
+  }
 }

@@ -56,7 +56,7 @@ class _HealthConnectScreenState extends State<HealthConnectScreen> {
       if (!mounted) return;
       setState(() {
         _statusLoading = false;
-        _statusError = 'No se pudo comprobar Health Connect: $error';
+        _statusError = 'No se pudo comprobar Health Connect. Inténtalo de nuevo.';
       });
     }
   }
@@ -77,7 +77,7 @@ class _HealthConnectScreenState extends State<HealthConnectScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _loadError = 'No se pudieron cargar los datos guardados: $error';
+        _loadError = 'No se pudieron cargar los datos guardados. Inténtalo de nuevo.';
         _loading = false;
       });
     }
@@ -114,7 +114,7 @@ class _HealthConnectScreenState extends State<HealthConnectScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _loadError = 'No se pudo sincronizar: $error';
+        _loadError = 'No se pudo sincronizar. Inténtalo de nuevo.';
         _syncing = false;
       });
     }
@@ -135,7 +135,9 @@ class _HealthConnectScreenState extends State<HealthConnectScreen> {
       await _loadStatus();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _statusError = 'No se pudo abrir la instalación: $error');
+      setState(
+        () => _statusError = 'No se pudo abrir la instalación. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -145,8 +147,8 @@ class _HealthConnectScreenState extends State<HealthConnectScreen> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _statusError =
-              'No se pudo abrir la configuración de Health Connect: $error',
+          () =>           _statusError =
+              'No se pudo abrir la configuración de Health Connect. Inténtalo de nuevo.',
         );
       }
     }

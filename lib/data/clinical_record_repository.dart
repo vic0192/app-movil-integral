@@ -106,8 +106,10 @@ class ClinicalRecordRepository {
                 AppUserProfile.fromMap(profile['id'] as String, profile),
           )
           .toList(growable: false);
-    } on PostgrestException catch (error) {
-      throw ClinicalRecordException(error.message);
+    } on PostgrestException {
+      throw const ClinicalRecordException(
+        'No se pudieron cargar los pacientes autorizados. Inténtalo de nuevo.',
+      );
     }
   }
 
@@ -146,8 +148,10 @@ class ClinicalRecordRepository {
         'details': draft.details.trim(),
         'occurred_at': draft.occurredAt.toUtc().toIso8601String(),
       });
-    } on PostgrestException catch (error) {
-      throw ClinicalRecordException(error.message);
+    } on PostgrestException {
+      throw const ClinicalRecordException(
+        'No se pudo guardar la entrada clínica. Inténtalo de nuevo.',
+      );
     }
   }
 

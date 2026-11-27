@@ -1,12 +1,15 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../bio_medica_colors.dart';
 import '../data/api_report_repository.dart';
+import '../data/clinical_record_repository.dart';
+import '../data/clinical_video_call_repository.dart';
 import '../models/app_user_profile.dart';
 import '../models/health_report.dart';
+import '../widgets/clinical_call_invite_dialog.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({
@@ -15,12 +18,16 @@ class ReportsScreen extends StatefulWidget {
     this.chronicConditions = const [],
     this.repository,
     this.reportsStream,
+    this.patientNames,
+    this.callRepository,
   });
 
   final String patientName;
   final List<String> chronicConditions;
   final ReportRepository? repository;
   final Stream<List<HealthReport>>? reportsStream;
+  final Map<String, String>? patientNames;
+  final ClinicalVideoCallRepository? callRepository;
 
   @override
   State<ReportsScreen> createState() => _ReportsScreenState();
@@ -29,21 +36,18 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   late final ReportRepository _repository =
       widget.repository ?? ApiReportRepository();
-  final _search = TextEditingController();
+  late final ClinicalVideoCallRepository _callRepository =
+      widget.callRepository ?? SupabaseClinicalVideoCallRepository();
   Stream<List<HealthReport>>? _reports;
+  Map<String, String> _patientNames = const {};
   String? _initializationError;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    _patientNames = widget.patientNames ?? const {};
     _initialize();
-  }
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
   }
 
   @override
@@ -64,14 +68,38 @@ class _ReportsScreenState extends State<ReportsScreen> {
         return;
       }
       await _repository.initialize();
-      if (mounted) setState(() => _reports = _repository.watchReports());
-    } on ReportStoreException catch (error) {
-      if (mounted) setState(() => _initializationError = error.message);
+      var patientNames = widget.patientNames ?? const <String, String>{};
+      if (widget.patientNames == null &&
+          _repository.role != AppRole.patient) {
+        try {
+          final clinicalRecords = ClinicalRecordRepository();
+          await clinicalRecords.initialize();
+          final patients = await clinicalRecords.loadPatients();
+          patientNames = {
+            for (final patient in patients) patient.uid: patient.displayName,
+          };
+        } catch (error) {
+          debugPrint('Could not load report patient labels.');
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _patientNames = patientNames;
+          _reports = _repository.watchReports();
+        });
+      }
+    } on ReportStoreException {
+      if (mounted) {
+        setState(
+          () => _initializationError =
+              'No se pudieron cargar los reportes. Inténtalo más tarde.',
+        );
+      }
     } catch (error) {
       if (mounted) {
         setState(
           () => _initializationError =
-              'No se pudo conectar con el servicio de reportes. Detalle: $error',
+              'No se pudo conectar con el servicio de reportes. Inténtalo de nuevo.',
         );
       }
     }
@@ -98,7 +126,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } on ReportStoreException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (error) {
-      if (mounted) _showMessage('No se pudo guardar el reporte: $error');
+      if (mounted) {
+        _showMessage('No se pudo guardar el reporte. Inténtalo de nuevo.');
+      }
     } finally {
       if (report != null && mounted) setState(() => _busy = false);
     }
@@ -123,7 +153,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } catch (error) {
       if (mounted) {
         _showMessage(
-          'No se pudo guardar el reporte: $error',
+          'No se pudo guardar el reporte. Inténtalo de nuevo.',
           retry: () => unawaited(_createReport(draft)),
         );
       }
@@ -159,17 +189,33 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } on ReportStoreException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (error) {
-      if (mounted) _showMessage('No se pudo eliminar el reporte: $error');
+      if (mounted) {
+        _showMessage('No se pudo eliminar el reporte. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _copyOwnerUid() async {
-    final ownerUid = _repository.ownerUid;
-    if (ownerUid == null) return;
-    await Clipboard.setData(ClipboardData(text: ownerUid));
-    if (mounted) _showMessage('ID de cuenta copiado.');
+  Future<void> _startCall(HealthReport report) async {
+    final patientUid = report.ownerUid;
+    if (patientUid == null) {
+      _showMessage('Este reporte no tiene un paciente asociado.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final call = await _callRepository.createCall(patientUid);
+      if (mounted) await showClinicalCallInviteDialog(context, call);
+    } on ClinicalVideoCallException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } catch (error) {
+      if (mounted) {
+        _showMessage('No se pudo iniciar la llamada. Inténtalo de nuevo.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _showMessage(String message, {VoidCallback? retry}) {
@@ -206,7 +252,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     ),
                   ),
                   Text(
-                    widget.patientName,
+                    _repository.role == AppRole.patient
+                        ? widget.patientName
+                        : 'Pacientes autorizados',
                     style: const TextStyle(color: BioMedicaColors.muted),
                   ),
                 ],
@@ -224,27 +272,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
         child: _ownerCard(),
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-        child: TextField(
-          key: const ValueKey('searchReport'),
-          controller: _search,
-          onChanged: (_) => setState(() {}),
-          decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.search_rounded),
-            hintText: 'Buscar por ID (por ejemplo, REP001)',
-            suffixIcon: IconButton(
-              tooltip: 'Limpiar búsqueda',
-              onPressed: () {
-                _search.clear();
-                setState(() {});
-              },
-              icon: const Icon(Icons.close_rounded),
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        ),
       ),
       Expanded(child: _reportList()),
     ],
@@ -266,28 +293,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Tus reportes de salud',
+              Text(
+                _repository.role == AppRole.patient
+                    ? 'Tus reportes de salud'
+                    : 'Reportes clínicos de pacientes autorizados',
                 style: TextStyle(fontSize: 12),
               ),
-              if (_repository.ownerUid case final uid?)
-                SelectableText(
-                  'UID para pruebas: $uid',
-                  style: const TextStyle(
-                    color: BioMedicaColors.muted,
-                    fontSize: 10,
-                  ),
-                ),
             ],
           ),
         ),
-        if (_repository.ownerUid != null)
-          IconButton(
-            tooltip: 'Copiar UID',
-            visualDensity: VisualDensity.compact,
-            onPressed: _copyOwnerUid,
-            icon: const Icon(Icons.copy_rounded, size: 16),
-          ),
       ],
     ),
   );
@@ -323,7 +337,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         if (snapshot.hasError) {
           return _messageState(
             icon: Icons.error_outline_rounded,
-            message: 'No se pudieron consultar los reportes: ${snapshot.error}',
+            message: 'No se pudieron consultar los reportes. Inténtalo de nuevo.',
             action: TextButton.icon(
               onPressed: () =>
                   setState(() => _reports = _repository.watchReports()),
@@ -339,17 +353,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
             message: 'Cargando reportes...',
           );
         }
-        final query = _search.text.trim().toLowerCase();
-        final items = (snapshot.data ?? const <HealthReport>[])
-            .where((report) => report.id.toLowerCase().contains(query))
-            .toList();
+        final items = snapshot.data ?? const <HealthReport>[];
         if (items.isEmpty) {
           return _messageState(
             icon: Icons.description_outlined,
-            message: query.isEmpty
+            message: _canCreate
                 ? 'Aún no hay reportes. Crea uno para comenzar.'
-                : 'No se encontró el reporte "$query".',
-            action: query.isEmpty && _canCreate
+                : 'No hay reportes para mostrar.',
+            action: _canCreate
                 ? FilledButton.icon(
                     onPressed: _busy ? null : _openForm,
                     icon: const Icon(Icons.add_rounded),
@@ -432,6 +443,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   fontSize: 11,
                 ),
               ),
+              if (_repository.role != AppRole.patient)
+                Text(
+                  'Paciente: ${_patientNames[report.ownerUid] ?? 'Paciente'}',
+                  style: const TextStyle(
+                    color: BioMedicaColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               Text(
                 report.otherMalestar?.isNotEmpty == true
                     ? '${report.malestar ?? report.equipment}: ${report.otherMalestar}'
@@ -489,10 +509,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   'Pendiente de revisión médica',
                   style: TextStyle(color: BioMedicaColors.muted, fontSize: 11),
                 ),
+              if (_repository.role == AppRole.doctor ||
+                  _repository.role == AppRole.admin) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.tonalIcon(
+                    onPressed: _busy ? null : () => _startCall(report),
+                    icon: const Icon(Icons.video_call_outlined),
+                    label: const Text('Atender por llamada'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-        if (_repository.role != AppRole.doctor)
+        if (_repository.role == AppRole.patient)
           PopupMenuButton<String>(
             tooltip: 'Acciones del reporte',
             enabled: !_busy,

@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.biomedica_app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.3.0"
+        versionCode = 10
+        versionName = "1.4.4"
     }
 
     compileOptions {

@@ -65,7 +65,7 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _loadError = 'No se pudieron cargar los recordatorios: $error';
+          _loadError = 'No se pudieron cargar los recordatorios. Inténtalo de nuevo.';
         });
       }
     }
@@ -94,7 +94,9 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
     } on ReminderStoreException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (error) {
-      if (mounted) _showMessage('No se pudo programar el recordatorio: $error');
+      if (mounted) {
+        _showMessage('No se pudo programar el recordatorio. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -129,7 +131,9 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
     } on ReminderStoreException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (error) {
-      if (mounted) _showMessage('No se pudo eliminar el recordatorio: $error');
+      if (mounted) {
+        _showMessage('No se pudo eliminar el recordatorio. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -163,7 +167,9 @@ class _ReminderSettingsScreenState extends State<ReminderSettingsScreen> {
     } on ReminderStoreException catch (error) {
       if (mounted) _showMessage(error.message);
     } catch (error) {
-      if (mounted) _showMessage('No se pudo programar el recordatorio: $error');
+      if (mounted) {
+        _showMessage('No se pudo programar el recordatorio. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

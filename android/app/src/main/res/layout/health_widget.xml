@@ -31,7 +31,7 @@
             android:background="@drawable/health_widget_badge"
             android:paddingHorizontal="8dp"
             android:paddingVertical="4dp"
-            android:text="DATOS DE DEMOSTRACIÓN"
+            android:text="SIN LECTURAS"
             android:textColor="#80530C"
             android:textSize="9sp"
             android:textStyle="bold" />

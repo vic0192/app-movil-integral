@@ -25,7 +25,6 @@ class HealthWidgetProvider : AppWidgetProvider() {
         private const val KEY_SPO2 = "spo2"
         private const val KEY_TEMPERATURE = "temperature"
         private const val KEY_UPDATED_AT = "updatedAt"
-        private const val KEY_IS_DEMO = "isDemo"
 
         fun update(context: Context, values: Map<*, *>) {
             val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -34,7 +33,6 @@ class HealthWidgetProvider : AppWidgetProvider() {
                 .putString(KEY_SPO2, values[KEY_SPO2]?.toString().orEmpty())
                 .putString(KEY_TEMPERATURE, values[KEY_TEMPERATURE]?.toString().orEmpty())
                 .putString(KEY_UPDATED_AT, values[KEY_UPDATED_AT]?.toString().orEmpty())
-                .putBoolean(KEY_IS_DEMO, values[KEY_IS_DEMO] as? Boolean ?: true)
                 .apply()
 
             val manager = AppWidgetManager.getInstance(context)
@@ -51,7 +49,6 @@ class HealthWidgetProvider : AppWidgetProvider() {
             val hasSpo2 = preferences.getString(KEY_SPO2, null).orEmpty().isNotBlank()
             val hasTemperature =
                 preferences.getString(KEY_TEMPERATURE, null).orEmpty().isNotBlank()
-            val isDemo = preferences.getBoolean(KEY_IS_DEMO, true)
 
             views.setTextViewText(
                 R.id.widget_heart_rate,
@@ -67,12 +64,12 @@ class HealthWidgetProvider : AppWidgetProvider() {
             )
             views.setTextViewText(
                 R.id.widget_status,
-                if (isDemo) "DATOS DE DEMOSTRACIÓN" else "ÚLTIMAS LECTURAS",
+                if (hasHeartRate || hasSpo2 || hasTemperature) "ÚLTIMAS LECTURAS" else "SIN LECTURAS",
             )
             val updatedAt = preferences.getString(KEY_UPDATED_AT, null).orEmpty()
             views.setTextViewText(
                 R.id.widget_updated,
-                if (updatedAt.isBlank()) "Abre BioMedica para sincronizar" else "Actualizado $updatedAt",
+                if (updatedAt.isBlank()) "Sin mediciones registradas" else "Actualizado $updatedAt",
             )
             views.setTextViewText(
                 R.id.widget_description,
