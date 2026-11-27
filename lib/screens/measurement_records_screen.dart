@@ -35,50 +35,49 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => _content();
+
+  Widget _content() {
     final error = _error;
     if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'No se pudieron consultar las mediciones: $error',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: BioMedicaColors.red),
-          ),
+      return _scrollState(
+        Text(
+          'No se pudieron consultar las mediciones: $error',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: BioMedicaColors.red),
         ),
       );
     }
     final stream = _measurements;
-    if (stream == null) return const Center(child: CircularProgressIndicator());
+    if (stream == null) {
+      return _scrollState(const CircularProgressIndicator());
+    }
     return StreamBuilder<List<WearableMeasurement>>(
       stream: stream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'No se pudieron leer las mediciones: ${snapshot.error}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: BioMedicaColors.red),
-              ),
+          return _scrollState(
+            Text(
+              'No se pudieron leer las mediciones: ${snapshot.error}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: BioMedicaColors.red),
             ),
           );
         }
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return _scrollState(const CircularProgressIndicator());
         }
         final measurements = snapshot.data!;
         if (measurements.isEmpty) {
-          return const Center(
-            child: Text(
+          return _scrollState(
+            const Text(
               'No hay mediciones registradas para este acceso.',
               style: TextStyle(color: BioMedicaColors.muted),
             ),
           );
         }
         return ListView.separated(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           itemCount: measurements.length,
           separatorBuilder: (_, _) => const SizedBox(height: 8),
@@ -88,6 +87,18 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
       },
     );
   }
+
+  Widget _scrollState(Widget child) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: Center(
+          child: Padding(padding: const EdgeInsets.all(24), child: child),
+        ),
+      ),
+    ),
+  );
 
   Widget _measurementTile(WearableMeasurement measurement) {
     final date = measurement.readingAt.toLocal();
@@ -103,14 +114,41 @@ class _MeasurementRecordsScreenState extends State<MeasurementRecordsScreen> {
           color: BioMedicaColors.primary,
         ),
         title: Text('${measurement.heartRateBpm} BPM · $timestamp'),
-        subtitle: Text(
-          'Paciente: ${measurement.ownerUid}\n'
-          'Dispositivo: ${measurement.deviceName} · Fuente: ${measurement.source}'
-          '${measurement.oxygenSaturationPercent == null ? '' : '\nSpO₂: ${measurement.oxygenSaturationPercent}%'}'
-          '${measurement.bodyTemperatureCelsius == null ? '' : '\nTemperatura: ${measurement.bodyTemperatureCelsius!.toStringAsFixed(1)} °C'}',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Paciente: ${measurement.ownerUid}\n'
+              'Dispositivo: ${measurement.deviceName} · Fuente: ${measurement.source}'
+              '${measurement.oxygenSaturationPercent == null ? '' : '\nSpO₂: ${measurement.oxygenSaturationPercent}%'}'
+              '${measurement.bodyTemperatureCelsius == null ? '' : '\nTemperatura: ${measurement.bodyTemperatureCelsius!.toStringAsFixed(1)} °C'}',
+            ),
+            for (final entry in measurement.sensorReadings.entries)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  '${entry.value.label}: '
+                  '${_formatSensorValues(entry.value.values)} ${entry.value.unit}'
+                  '${entry.value.observedAt == null ? '' : ' · ${_formatReadingTime(entry.value.observedAt!)}'}',
+                ),
+              ),
+          ],
         ),
-        isThreeLine: true,
       ),
     );
+  }
+
+  String _formatSensorValues(List<double> values) => values
+      .map(
+        (value) => value == value.roundToDouble()
+            ? value.round().toString()
+            : value.toStringAsFixed(2),
+      )
+      .join(' · ');
+
+  String _formatReadingTime(DateTime time) {
+    final local = time.toLocal();
+    return '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}';
   }
 }

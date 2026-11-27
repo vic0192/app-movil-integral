@@ -13,16 +13,16 @@ asíncrona. Los indicadores vitales, tarjetas de historial y hero del turno son
 ## Pantallas y diseño
 
 - Acceso y registro: formularios lineales, limpios y centrados en la tarea.
-- Vinculación: diálogo/modal con tarjeta central para búsqueda, conexión y
-  estado BLE.
-- Inicio: dashboard vertical con tarjetas e indicadores circulares para
-  frecuencia cardiaca, SpO₂ y temperatura; incluye actividad, wearable y turno.
+- Galaxy Watch: detección automática del reloj emparejado, recepción de lecturas
+  Wear OS y acceso a Galaxy Wearable para el primer emparejamiento.
+- Inicio: resumen de frecuencia cardiaca con interpretación informativa,
+  conexión del wearable, reportes y turno.
 - Historial: lista vertical de lecturas y gráfica.
 - Mi turno: estado focalizado con número destacado, estado y progreso visual.
 
 Las vistas usan desplazamiento, `LayoutBuilder`, `MediaQuery` y un ancho máximo
 de contenido para adaptarse a teléfonos compactos (360 × 640), estándar
-(375 × 812) y grandes (414 × 896), con orientación vertical como referencia.
+(375 × 812) y grandes (414 × 896). La app móvil mantiene la orientación vertical.
 
 ## Widget de inicio Android
 
@@ -99,6 +99,144 @@ flutter run --dart-define-from-file=supabase.local.json `
   --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
 ```
 
+En builds de depuración, BioMedica consulta `GET /auth/v1/health` de Supabase
+al abrirse y cada cinco minutos mientras permanece en primer plano. La respuesta
+y su latencia se registran en la consola como evidencia de conectividad; la
+consulta no envía datos clínicos ni se activa en builds de producción. Es una
+sonda de disponibilidad, no una garantía contra timeouts de otras solicitudes.
+
+### BioMedica Watch para Galaxy Watch 4 Classic
+
+El módulo Wear OS detecta los sensores estándar que Android expone mientras la
+app está visible. La pantalla del reloj solo muestra el estado de conexión y el
+botón **Tomar medición**; no presenta valores crudos. El reloj espera una nueva
+lectura de pulso y la envía por Wear OS Data Layer. La captura queda en cola si
+BioMedica no está abierto y se guarda automáticamente al sincronizar. Vincula
+primero el reloj en Galaxy Wearable; no se busca como un sensor BLE genérico.
+
+Para registrar frecuencia cardiaca:
+
+1. Instala BioMedica en el teléfono Android e inicia sesión con la cuenta del
+   paciente que debe ser propietaria del registro.
+2. Instala **BioMedica Watch** en el Galaxy Watch y concede los permisos de
+   sensor corporal y actividad física cuando se soliciten.
+3. Mantén el reloj vinculado mediante Galaxy Wearable. En el reloj, concede los
+   permisos de sensores y pulsa **Tomar medición**; permanece quieto mientras
+   busca una lectura nueva.
+4. BioMedica en el teléfono recibe y guarda la captura en la cuenta autenticada.
+   Si el teléfono estaba desconectado, abre la app para que sincronice la captura
+   pendiente; cualquier error de almacenamiento se muestra en el teléfono.
+5. El móvil presenta una orientación informativa para la frecuencia cardiaca
+   (referencia de adultos en reposo, 60–100 BPM). No es un diagnóstico.
+
+La orientación **Perfil → Configurar contraseña de la app** permite activar un
+bloqueo local que se solicita al volver a abrir BioMedica. La contraseña se
+guarda en el almacenamiento seguro del dispositivo y no sustituye la contraseña
+de la cuenta. El icono del teléfono y del reloj reutiliza el logo del sitio web.
+La orientación de la pantalla del reloj sigue el ajuste de muñeca configurado
+por Wear OS, incluida la muñeca derecha y los botones hacia los dedos.
+
+Para instalar los APK de depuración por ADB:
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\sdk\platform-tools\adb.exe"
+# Instala la app del teléfono mientras está conectado por USB.
+& $adb -s <serial-del-telefono> install -r build\app\outputs\flutter-apk\app-debug.apk
+# En el reloj, activa Opciones de desarrollador > Depuración ADB y Depuración inalámbrica.
+& $adb pair <ip-del-reloj:puerto-de-emparejamiento>
+& $adb connect <ip-del-reloj:puerto-adb>
+& $adb -s <ip-del-reloj:puerto-adb> install -r build\wear\outputs\apk\debug\wear-debug.apk
+```
+
+El módulo captura en paralelo los sensores públicos disponibles: pulso, pasos,
+acelerómetro, giroscopio, campo magnético, presión atmosférica, luz y vectores
+de orientación cuando el firmware los expone. En el teléfono se muestran las
+lecturas adicionales recibidas, sus unidades y la hora en que cada sensor las
+observó; los mismos datos se guardan en `sensor_readings` de
+`public.measurements`. Sensores sin permiso o sin una lectura recibida no se
+rellenan con estimaciones.
+
+En el Galaxy Watch4 Classic SM-R890 conectado durante la validación, el
+inventario del sistema también enumera ECG y BIA, pero esos sensores exigen el
+permiso protegido `com.samsung.permission.SSENSOR`; una app normal no puede
+concedérselo a sí misma. SpO₂, presión arterial clínica y temperatura corporal
+no se exponen como sensores públicos de Android en este reloj. Por lo tanto,
+esta app no accede directamente a los sensores privados de Samsung. La pantalla
+móvil ahora puede leer desde Health Connect las métricas médicas que ya estén
+compartidas por Samsung Health: frecuencia cardiaca, SpO₂, presión arterial,
+temperatura corporal, composición corporal y sueño. La temperatura corporal
+solo aparece si una fuente la comparte realmente; la sincronización es manual,
+solicita permisos de lectura por tipo, conserva fuente y hora, y guarda
+registros recientes en Supabase con deduplicación y RLS. El usuario debe
+habilitar el intercambio en Health Connect/Samsung Health; la app no crea ni
+completa datos ausentes.
+
+Health Connect en Android no entrega la forma de onda ECG. ECG y forma de onda
+siguen indisponibles hasta contar con acceso oficial autorizado al SDK de
+Samsung. La presión arterial solo aparece si una fuente autorizada la comparte
+en Health Connect. Presión atmosférica no es presión arterial, y temperatura
+ambiental no es temperatura corporal.
+
+En **Datos médicos sincronizados**, el botón **Configurar intercambio de datos**
+abre Health Connect. Habilita Samsung Health como origen y concede a BioMedica
+permiso de lectura; después pulsa **Sincronizar ahora** para importar las
+lecturas recientes disponibles.
+
+Inicio presenta cada métrica sincronizada en una tarjeta con icono, color,
+lectura animada y tendencia. Solo crea tarjetas para los tipos que tienen
+lecturas guardadas: si falta temperatura corporal, no muestra un valor vacío y
+presenta las demás métricas disponibles, como frecuencia cardiaca. La primera
+autorización sigue siendo manual; después, en Android, BioMedica sincroniza en
+primer plano y al volver a abrirse, sin pedir permisos nuevos y como máximo
+cada 15 minutos durante la misma sesión de la app. En “Última medición”, SpO₂
+y temperatura muestran su propia fuente y hora, ya que pueden proceder de una
+sincronización distinta a la frecuencia cardiaca del reloj.
+
+El teléfono escucha las lecturas Wear OS y comprueba automáticamente la
+conexión del Galaxy Watch. El primer emparejamiento debe confirmarse en Galaxy
+Wearable por las restricciones de Android; luego BioMedica detecta el reloj y
+solo muestra mediciones guardadas con origen `wear_os_sensor`, no lecturas de
+otros sensores BLE.
+
+La integración Health Connect requiere Android 8.0 (API 26) o posterior.
+
+Aplica la migración
+[20261120000000_health_connect_records.sql](supabase/migrations/20261120000000_health_connect_records.sql)
+en Supabase para habilitar el almacenamiento de las lecturas sincronizadas.
+Aplica también
+[20261126000000_clinical_record_realtime.sql](supabase/migrations/20261126000000_clinical_record_realtime.sql)
+para habilitar el expediente, su acceso en tiempo real y el tipo de dato de
+temperatura corporal. La app muestra el expediente y permite a los médicos
+asignados agregar diagnósticos, notas, medicamentos, alergias y consultas; el
+paciente y el administrador pueden consultarlo.
+
+Los reportes de Firestore se actualizan en la app mediante una conexión SSE.
+Despliega el backend actualizado junto con la app para habilitar esta función.
+La administración de usuarios está disponible en la pestaña **Usuarios** para
+administradores y permite cambiar roles y asignar pacientes a médicos.
+
+La videollamada con Jitsi público es solo una demostración: el médico genera y
+comparte un enlace aleatorio y el paciente lo pega en **Mi consulta**. No se
+envían nombres ni datos clínicos a Jitsi; las salas públicas no verifican
+identidades y no deben usarse para consultas reales.
+
+Aplica la migración
+[20261119000000_measurement_sensor_readings.sql](supabase/migrations/20261119000000_measurement_sensor_readings.sql)
+en Supabase antes de usar la escritura con esta versión. Los registros
+anteriores conservan un objeto vacío por omisión.
+
+Las lecturas son informativas, no son diagnóstico ni sustituyen atención
+profesional. Los sensores se escuchan solo mientras la app del reloj está
+visible para limitar el uso de batería.
+
+Para compilar los APK de depuración desde PowerShell:
+
+```powershell
+flutter build apk --debug --dart-define-from-file=supabase.local.json `
+  --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
+.\android\gradlew.bat -p android :wear:assembleDebug
+```
+
 ### Notificaciones de chat en Android
 
 Para recibir mensajes con la app en segundo plano o cerrada, registra en Firebase
@@ -156,8 +294,8 @@ WHERE id = 'AUTH-USER-UUID'::uuid;
 Los recordatorios se guardan por usuario en Supabase y se programan como
 notificaciones locales al iniciar sesión y guardar cambios. El usuario debe
 permitir las notificaciones en el teléfono; el ahorro de batería puede retrasar
-los avisos. Las mediciones reales del reloj se guardan cuando el paciente toca
-**Guardar medición**; las lecturas de demostración no se aceptan.
+los avisos. Las lecturas capturadas desde BioMedica Watch se guardan
+automáticamente; las lecturas de demostración no se aceptan.
 
 La API de Render y Firestore que se documentan abajo son componentes heredados
 que siguen utilizándose para el estado/telemetría del dashboard y para
@@ -259,7 +397,9 @@ El companion `:wear` solicita permiso `BODY_SENSORS` y transmite el pulso
 obtenido con `Sensor.TYPE_HEART_RATE`. Es el dato implementado para Galaxy
 Watch. No todos los relojes exponen SpO₂ o temperatura; solo se guardan si una
 fuente real compatible los proporciona. Las lecturas simuladas no se pueden
-guardar.
+guardar. Las capturas del reloj pueden sincronizarse hasta 24 horas después
+para tolerar interrupciones de conexión; lecturas BLE siguen exigiendo
+actualización reciente.
 
 La app conserva valores y fechas, pero **no genera diagnósticos, alertas
 clínicas ni recomendaciones médicas**. Los límites de captura son validaciones
@@ -277,12 +417,15 @@ Firestore y un Galaxy Watch real. El checklist de migración y pruebas está en
 
 ## Versionamiento
 
-La versión objetivo es `1.3.0+5` en `pubspec.yaml`. Configura
+La versión es `1.5.19+19` en `pubspec.yaml`; el companion Wear OS es
+`1.4.3+9`. Configura
 `supabase.local.json` al compilar para que la APK conecte Auth/datos con
-Supabase y los reportes con la API de Render:
+Supabase y los reportes con la API de Render. Core API usa por defecto
+`https://app-biomedica-web.onrender.com`; puedes sobreescribirla para otro
+entorno con `BIOMEDICA_CORE_API_URL`:
 
 ```powershell
-flutter build apk --release --build-name 1.3.0 --build-number 5 `
+flutter build apk --release `
   --dart-define-from-file=supabase.local.json `
   --dart-define=BIOMEDICA_CORE_API_URL=https://app-biomedica-web.onrender.com
 ```

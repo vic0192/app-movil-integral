@@ -13,10 +13,11 @@ class ApiReportRepository implements ReportRepository {
     : _client = client,
       _api =
           api ??
-        CoreApiClient(
-          accessTokenProvider: _sessionTokenProvider(client),
-          accessTokenRefresher: _forceRefreshSessionToken(client),
-        );
+          CoreApiClient(
+            accessTokenProvider: _sessionTokenProvider(client),
+            accessTokenRefresher: _forceRefreshSessionToken(client),
+            requestTimeout: const Duration(seconds: 60),
+          );
 
   final CoreApiClient _api;
   final SupabaseClient? _client;
@@ -139,26 +140,21 @@ class ApiReportRepository implements ReportRepository {
   @override
   Stream<List<HealthReport>> watchReports() {
     _requireOwner();
-    return _api.poll(_fetchReports);
+    return _api.events('/api/reports/stream').map(_decodeReports);
   }
 
-  Future<List<HealthReport>> _fetchReports() async {
-    try {
-      final response = await _api.get('/api/reports');
-      final items = response['reports'];
-      if (items is! List) {
-        throw const ReportStoreException(
-          'La API devolvió una lista de reportes inválida.',
-        );
-      }
-      return items
-          .whereType<Map>()
-          .map((item) => HealthReport.fromJson(Map<String, dynamic>.from(item)))
-          .toList(growable: false)
-        ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
-    } on CoreApiException catch (error) {
-      throw _mapApiError(error);
+  List<HealthReport> _decodeReports(Map<String, dynamic> response) {
+    final items = response['reports'];
+    if (items is! List) {
+      throw const ReportStoreException(
+        'La API devolvió una lista de reportes inválida.',
+      );
     }
+    return items
+        .whereType<Map>()
+        .map((item) => HealthReport.fromJson(Map<String, dynamic>.from(item)))
+        .toList(growable: false)
+      ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
   }
 
   @override
@@ -173,10 +169,11 @@ class ApiReportRepository implements ReportRepository {
     }
     _validateDraft(draft);
     final id = _validateId(documentId ?? draft.id);
+    final reportId = id.isEmpty ? HealthReportDraft.generateId() : id;
     try {
       final response = await _api.post('/api/reports', {
-        'id': id.isEmpty ? null : id,
-        ..._reportData(draft),
+        'id': reportId,
+        ...draft.toApiJson(),
       });
       final report = response['report'];
       if (report is! Map || report['id'] is! String) {
@@ -186,8 +183,8 @@ class ApiReportRepository implements ReportRepository {
       }
       return report['id'] as String;
     } on CoreApiException catch (error) {
-      if (error.statusCode == 409 && id.isNotEmpty) {
-        throw DuplicateReportIdException(id);
+      if (error.statusCode == 409) {
+        throw DuplicateReportIdException(reportId);
       }
       throw _mapApiError(error);
     }
@@ -200,7 +197,7 @@ class ApiReportRepository implements ReportRepository {
     final normalizedId = _validateId(id);
     try {
       await _api.put('/api/reports/${Uri.encodeComponent(normalizedId)}', {
-        ..._reportData(draft),
+        ...draft.toApiJson(),
       });
     } on CoreApiException catch (error) {
       if (error.statusCode == 404) throw ReportNotFoundException(normalizedId);
@@ -264,16 +261,6 @@ class ApiReportRepository implements ReportRepository {
       if (error != null) throw ReportStoreException(error);
     }
   }
-
-  Map<String, Object> _reportData(HealthReportDraft draft) => {
-    'equipment': draft.equipment.trim(),
-    'malestar': (draft.malestar ?? draft.equipment).trim(),
-    if (draft.otherMalestar != null)
-      'otherMalestar': draft.otherMalestar!.trim(),
-    'description': draft.description.trim(),
-    'priority': draft.priority,
-    'onsetAt': (draft.onsetAt ?? DateTime.now()).toIso8601String(),
-  };
 
   ReportStoreException _mapApiError(CoreApiException error) =>
       switch (error.statusCode) {

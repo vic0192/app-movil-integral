@@ -7,6 +7,10 @@ import 'package:biomedica_app/screens/reports_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+final _uuidPattern = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+);
+
 void main() {
   late _FakeReportRepository repository;
 
@@ -25,12 +29,38 @@ void main() {
       priority: 'Media',
     );
 
-    expect(find.text('AUTO001'), findsOneWidget);
+    expect(repository.reports.single.id, matches(_uuidPattern));
     expect(find.text('Fiebre'), findsWidgets);
     expect(find.text('No enciende la pantalla'), findsOneWidget);
     expect(find.text('Prioridad: Media'), findsOneWidget);
     expect(repository.reports, hasLength(1));
     expect(repository.reports.single.malestar, 'Fiebre');
+  });
+
+  testWidgets('retries a failed create using the same operation ID', (
+    tester,
+  ) async {
+    repository.createError = const ReportStoreException(
+      'No se pudo conectar.',
+      code: 'unavailable',
+    );
+    await _pumpScreen(tester, repository);
+    await tester.pumpAndSettle();
+    await _fillForm(
+      tester,
+      malestar: 'Fiebre',
+      description: 'Prueba de reintento',
+      priority: 'Media',
+    );
+
+    expect(find.text('Reintentar'), findsOneWidget);
+    final operationId = repository.createAttempts.single;
+    repository.createError = null;
+    await tester.tap(find.text('Reintentar'));
+    await tester.pumpAndSettle();
+
+    expect(repository.createAttempts, [operationId, operationId]);
+    expect(repository.reports.single.id, operationId);
   });
 
   testWidgets('TC02 - rechaza descripción vacía', (tester) async {
@@ -45,9 +75,7 @@ void main() {
     expect(repository.reports, isEmpty);
   });
 
-  testWidgets('TC09 - exige detalle cuando se selecciona Otro', (
-    tester,
-  ) async {
+  testWidgets('TC09 - exige detalle cuando se selecciona Otro', (tester) async {
     await _pumpScreen(tester, repository);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('newReport')));
@@ -75,11 +103,7 @@ void main() {
   testWidgets('TC10 - las opciones sugeridas consideran padecimientos', (
     tester,
   ) async {
-    await _pumpScreen(
-      tester,
-      repository,
-      chronicConditions: const ['Asma'],
-    );
+    await _pumpScreen(tester, repository, chronicConditions: const ['Asma']);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('newReport')));
     await tester.pumpAndSettle();
@@ -102,7 +126,7 @@ void main() {
       description: 'Comenzó esta mañana',
     );
 
-    expect(repository.reports.single.id, 'AUTO001');
+    expect(repository.reports.single.id, matches(_uuidPattern));
     expect(repository.reports.single.otherMalestar, 'Visión borrosa temporal');
     expect(find.text('Otro: Visión borrosa temporal'), findsOneWidget);
   });
@@ -120,7 +144,7 @@ void main() {
     );
 
     expect(repository.reports, hasLength(1));
-    expect(repository.reports.single.id, 'AUTO001');
+    expect(repository.reports.single.id, matches(_uuidPattern));
     expect(repository.reports.single.otherMalestar, 'E' * 100);
     expect(repository.reports.single.description, 'D' * 500);
   });
@@ -265,9 +289,9 @@ Future<void> _fillForm(
 
 Future<void> _pumpScreen(
   WidgetTester tester,
-  ReportRepository repository,
-  {List<String> chronicConditions = const []}
-) async {
+  ReportRepository repository, {
+  List<String> chronicConditions = const [],
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -293,6 +317,7 @@ HealthReport _report({String priority = 'Media'}) => HealthReport(
 class _FakeReportRepository implements ReportRepository {
   final _controller = StreamController<List<HealthReport>>.broadcast();
   final List<HealthReport> reports = [];
+  final List<String> createAttempts = [];
   ReportStoreException? queryError;
   ReportStoreException? createError;
 
@@ -317,9 +342,10 @@ class _FakeReportRepository implements ReportRepository {
     HealthReportDraft draft, {
     String? documentId,
   }) async {
+    final id = documentId ?? draft.id;
+    createAttempts.add(id);
     final error = createError;
     if (error != null) throw error;
-    final id = documentId ?? draft.id;
     if (reports.any((report) => report.id == id)) {
       throw DuplicateReportIdException(id);
     }

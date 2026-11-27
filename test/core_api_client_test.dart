@@ -5,8 +5,28 @@ import 'dart:io';
 import 'package:biomedica_app/data/core_api_client.dart';
 import 'package:biomedica_app/data/relational_account_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
+  test('uses the deployed Core API when no build define is supplied', () async {
+    final requestedUri = Completer<Uri>();
+    final client = CoreApiClient(
+      client: MockClient((request) async {
+        requestedUri.complete(request.url);
+        return http.Response('{}', HttpStatus.ok);
+      }),
+      tokenStore: _MemoryTokenStore(),
+    );
+
+    await client.get('/health');
+
+    expect(
+      await requestedUri.future,
+      Uri.parse('${CoreApiClient.defaultBaseUrl}/health'),
+    );
+  });
+
   test('sends the saved bearer token to the configured API', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final authorization = Completer<String?>();
@@ -116,6 +136,28 @@ void main() {
     } finally {
       await server.close(force: true);
     }
+  });
+
+  test('applies the configured timeout to the complete API response', () async {
+    final client = CoreApiClient(
+      client: MockClient((_) async {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        return http.Response('{}', HttpStatus.ok);
+      }),
+      tokenStore: _MemoryTokenStore(),
+      requestTimeout: const Duration(milliseconds: 10),
+    );
+
+    await expectLater(
+      client.get('/api/reports'),
+      throwsA(
+        isA<CoreApiException>().having(
+          (error) => error.message,
+          'message',
+          contains('tardó demasiado'),
+        ),
+      ),
+    );
   });
 
   test(

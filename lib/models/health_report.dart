@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:characters/characters.dart';
 
 class HealthReport {
@@ -9,9 +11,13 @@ class HealthReport {
     required this.createdAt,
     required this.updatedAt,
     this.pendingSync = false,
+    this.reviewStatus = 'pending',
+    this.reviewObservations,
+    this.reviewedAt,
     this.malestar,
     this.otherMalestar,
     this.onsetAt,
+    this.ownerUid,
   });
 
   final String id;
@@ -21,9 +27,13 @@ class HealthReport {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool pendingSync;
+  final String reviewStatus;
+  final String? reviewObservations;
+  final DateTime? reviewedAt;
   final String? malestar;
   final String? otherMalestar;
   final DateTime? onsetAt;
+  final String? ownerUid;
 
   factory HealthReport.fromJson(Map<String, dynamic> data) {
     final id = data['id'];
@@ -31,14 +41,21 @@ class HealthReport {
     final malestar = data['malestar'];
     final otherMalestar = data['otherMalestar'];
     final onsetAt = data['onsetAt'];
+    final ownerUid = data['ownerUid'] ?? data['owner_uid'];
     final description = data['description'];
     final priority = data['priority'];
     final createdAt = data['createdAt'] ?? data['created_at'];
     final updatedAt = data['updatedAt'] ?? data['updated_at'];
+    final reviewStatus = data['reviewStatus'] ?? 'pending';
+    final reviewObservations = data['reviewObservations'];
+    final reviewedAt = data['reviewedAt'];
     if (id is! String ||
         (equipment is! String && malestar is! String) ||
         description is! String ||
-        priority is! String) {
+        priority is! String ||
+        (reviewStatus is! String ||
+            !const {'pending', 'reviewed'}.contains(reviewStatus)) ||
+        (reviewObservations != null && reviewObservations is! String)) {
       throw const FormatException('La API devolvió un reporte inválido.');
     }
     return HealthReport(
@@ -48,6 +65,9 @@ class HealthReport {
       priority: priority,
       createdAt: _dateTime(createdAt),
       updatedAt: _dateTime(updatedAt),
+      reviewStatus: reviewStatus,
+      reviewObservations: reviewObservations as String?,
+      reviewedAt: reviewedAt == null ? null : _dateTime(reviewedAt),
       malestar: malestar is String
           ? malestar
           : equipment is String
@@ -55,6 +75,7 @@ class HealthReport {
           : null,
       otherMalestar: otherMalestar is String ? otherMalestar : null,
       onsetAt: onsetAt == null ? null : _dateTime(onsetAt),
+      ownerUid: ownerUid is String ? ownerUid : null,
     );
   }
 
@@ -83,6 +104,27 @@ class HealthReportDraft {
   final String? malestar;
   final String? otherMalestar;
   final DateTime? onsetAt;
+
+  static String generateId() {
+    final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
+
+  Map<String, Object?> toApiJson() => {
+    'equipment': equipment.trim(),
+    'malestar': (malestar ?? equipment).trim(),
+    if (otherMalestar != null) 'otherMalestar': otherMalestar!.trim(),
+    'description': description.trim(),
+    'priority': priority,
+    'onsetAt': (onsetAt ?? DateTime.now()).toUtc().toIso8601String(),
+  };
 }
 
 class HealthReportValidation {

@@ -15,6 +15,42 @@ void main() {
       expect(HealthReportValidation.id('R' * 101), contains('100'));
     });
 
+    test('generates unique UUIDs for report operations', () {
+      final first = HealthReportDraft.generateId();
+      final second = HealthReportDraft.generateId();
+
+      expect(
+        first,
+        matches(
+          RegExp(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+          ),
+        ),
+      );
+      expect(second, isNot(first));
+    });
+
+    test('serializes local onset times with an explicit UTC offset', () {
+      final localOnset = DateTime(2026, 11, 5, 12, 25);
+      const draft = HealthReportDraft(
+        id: 'report-id',
+        equipment: 'Fiebre',
+        description: 'Prueba de fecha',
+        priority: 'Media',
+      );
+      final payload = HealthReportDraft(
+        id: draft.id,
+        equipment: draft.equipment,
+        description: draft.description,
+        priority: draft.priority,
+        onsetAt: localOnset,
+      ).toApiJson();
+      final serialized = payload['onsetAt']! as String;
+
+      expect(serialized, endsWith('Z'));
+      expect(DateTime.parse(serialized).toLocal(), localOnset);
+    });
+
     test('rejects blank report fields and accepts their maximum lengths', () {
       expect(HealthReportValidation.equipment(' \t '), isNotNull);
       expect(HealthReportValidation.description('  '), isNotNull);
@@ -52,7 +88,10 @@ void main() {
     test('rejects a symptom onset time in the future', () {
       final now = DateTime(2026, 10, 27, 12);
       expect(
-        HealthReportValidation.onsetAt(now.add(const Duration(minutes: 1)), now: now),
+        HealthReportValidation.onsetAt(
+          now.add(const Duration(minutes: 1)),
+          now: now,
+        ),
         contains('futuro'),
       );
       expect(HealthReportValidation.onsetAt(now, now: now), isNull);

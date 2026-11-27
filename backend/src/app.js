@@ -503,6 +503,105 @@ function createApp({
     }
   });
 
+  app.get('/api/reports/stream', async (request, response, next) => {
+    let closed = false;
+    let heartbeat;
+    const unsubscribe = [];
+    const closeStream = () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      for (const stop of unsubscribe) stop();
+    };
+
+    try {
+      const collection = firestore.collection('reportes');
+      let queries;
+      if (request.user.role === 'patient') {
+        queries = [collection.where('ownerUid', '==', request.user.uid)];
+      } else if (request.user.role === 'doctor') {
+        const patientUids = request.user.authProvider === 'supabase'
+          ? request.user.assignedPatientUids
+          : (await pool.query(
+            'SELECT patient_uid FROM patient_assignments WHERE doctor_uid = $1',
+            [request.user.uid],
+          )).rows.map((row) => row.patient_uid);
+        queries = [];
+        for (let index = 0; index < patientUids.length; index += 30) {
+          queries.push(
+            collection.where('ownerUid', 'in', patientUids.slice(index, index + 30)),
+          );
+        }
+      } else {
+        queries = [collection];
+      }
+
+      response
+        .status(200)
+        .set({
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'X-Accel-Buffering': 'no',
+        });
+      response.flushHeaders();
+      heartbeat = setInterval(() => {
+        if (!closed) response.write(': keep-alive\n\n');
+      }, 25000);
+      response.on('close', closeStream);
+
+      if (queries.length === 0) {
+        response.write(`data: ${JSON.stringify({ reports: [] })}\n\n`);
+        return;
+      }
+
+      const reportSets = new Map();
+      const publish = () => {
+        if (closed || reportSets.size !== queries.length) return;
+        const reports = new Map();
+        for (const reportsForQuery of reportSets.values()) {
+          for (const report of reportsForQuery) reports.set(report.id, report);
+        }
+        const sortedReports = [...reports.values()].sort(
+          (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+        );
+        response.write(`data: ${JSON.stringify({ reports: sortedReports })}\n\n`);
+      };
+
+      queries.forEach((query, index) => {
+        const stop = query.onSnapshot(
+          (snapshot) => {
+            reportSets.set(
+              index,
+              snapshot.docs
+                .map((document) => publicReport(document.id, document.data()))
+                .filter(Boolean),
+            );
+            publish();
+          },
+          (error) => {
+            if (closed) return;
+            response.write(
+              `data: ${JSON.stringify({
+                error: `No se pudieron actualizar los reportes: ${error.message}`,
+              })}\n\n`,
+            );
+            closeStream();
+            response.end();
+          },
+        );
+        unsubscribe.push(stop);
+      });
+    } catch (error) {
+      closeStream();
+      if (response.headersSent) {
+        response.end();
+        return;
+      }
+      next(error);
+    }
+  });
+
   app.post('/api/reports', requireRole('patient'), async (request, response, next) => {
     const validation = validateReport(request.body ?? {});
     if (validation) return response.status(400).json({ message: validation });
@@ -522,6 +621,10 @@ function createApp({
         priority: fields.priority,
         ownerUid: request.user.uid,
         onsetAt: fields.onsetAt ? new Date(fields.onsetAt) : now,
+        reviewStatus: 'pending',
+        reviewObservations: null,
+        reviewedAt: null,
+        reviewedByUid: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -543,6 +646,45 @@ function createApp({
       if (error instanceof InputError) {
         return response.status(400).json({ message: error.message });
       }
+      return next(error);
+    }
+  });
+
+  app.patch('/api/reports/:id/review', async (request, response, next) => {
+    if (request.user.role !== 'doctor' || request.user.authProvider !== 'supabase') {
+      return response.status(403).json({
+        message: 'Solo un médico verificado puede revisar reportes asignados.',
+      });
+    }
+    const observations = request.body?.observations;
+    if (typeof observations !== 'string' || textLength(observations) > 1000) {
+      return response.status(400).json({
+        message: 'Las observaciones deben tener como máximo 1000 caracteres.',
+      });
+    }
+    try {
+      const document = firestore.collection('reportes').doc(validateReportId(request.params.id));
+      const snapshot = await document.get();
+      if (!snapshot.exists) {
+        return response.status(404).json({ message: `No existe el reporte "${request.params.id}".` });
+      }
+      const existing = snapshot.data();
+      if (!request.user.assignedPatientUids.includes(existing.ownerUid)) {
+        return response.status(403).json({
+          message: 'Solo puedes revisar reportes de pacientes asignados.',
+        });
+      }
+      await document.update({
+        reviewStatus: 'reviewed',
+        reviewObservations: observations.trim(),
+        reviewedAt: new Date(),
+        reviewedByUid: request.user.uid,
+        updatedAt: new Date(),
+      });
+      const updated = await document.get();
+      return response.json({ report: publicReport(document.id, updated.data()) });
+    } catch (error) {
+      if (error instanceof InputError) return response.status(400).json({ message: error.message });
       return next(error);
     }
   });
@@ -572,6 +714,10 @@ function createApp({
         onsetAt: request.body.onsetAt
           ? new Date(request.body.onsetAt)
           : snapshot.data().onsetAt ?? snapshot.data().createdAt,
+        reviewStatus: 'pending',
+        reviewObservations: null,
+        reviewedAt: null,
+        reviewedByUid: null,
         updatedAt: new Date(),
       });
       const updated = await document.get();
@@ -899,7 +1045,10 @@ function measurementQuery(user) {
 
 function validateMeasurement(input, now = Date.now()) {
   const readingAt = Date.parse(input.readingAt);
-  if (!Number.isFinite(readingAt) || readingAt > now + 2 * 60_000 || now - readingAt > 5 * 60_000) {
+  const maxAgeMs = input.source === 'wear_os_sensor'
+    ? 24 * 60 * 60_000
+    : 5 * 60_000;
+  if (!Number.isFinite(readingAt) || readingAt > now + 2 * 60_000 || now - readingAt > maxAgeMs) {
     return 'La lectura está vencida o tiene una fecha no válida.';
   }
   if (!allowedMeasurementSources.has(input.source)) return 'La fuente de la lectura no es compatible.';
@@ -967,6 +1116,12 @@ function publicReport(id, data) {
     description: data.description,
     priority: data.priority,
     onsetAt: toNullableIsoDate(data.onsetAt),
+    reviewStatus: data.reviewStatus === 'reviewed' ? 'reviewed' : 'pending',
+    reviewObservations: typeof data.reviewObservations === 'string'
+      ? data.reviewObservations
+      : null,
+    reviewedAt: toNullableIsoDate(data.reviewedAt),
+    reviewedByUid: typeof data.reviewedByUid === 'string' ? data.reviewedByUid : null,
     createdAt: toIsoDate(data.createdAt),
     updatedAt: toIsoDate(data.updatedAt),
   };

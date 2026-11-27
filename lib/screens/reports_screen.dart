@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,11 +14,13 @@ class ReportsScreen extends StatefulWidget {
     required this.patientName,
     this.chronicConditions = const [],
     this.repository,
+    this.reportsStream,
   });
 
   final String patientName;
   final List<String> chronicConditions;
   final ReportRepository? repository;
+  final Stream<List<HealthReport>>? reportsStream;
 
   @override
   State<ReportsScreen> createState() => _ReportsScreenState();
@@ -42,8 +46,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant ReportsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.reportsStream != widget.reportsStream &&
+        widget.reportsStream != null) {
+      _reports = widget.reportsStream;
+      _initializationError = null;
+    }
+  }
+
   Future<void> _initialize() async {
     try {
+      final reportsStream = widget.reportsStream;
+      if (reportsStream != null) {
+        if (mounted) setState(() => _reports = reportsStream);
+        return;
+      }
       await _repository.initialize();
       if (mounted) setState(() => _reports = _repository.watchReports());
     } on ReportStoreException catch (error) {
@@ -68,17 +87,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
     if (draft == null || !mounted) return;
 
-    setState(() => _busy = true);
     try {
       if (report == null) {
-        final id = await _repository.createReport(
-          draft,
-          documentId: draft.id.isEmpty ? null : draft.id,
-        );
-        if (mounted) {
-          _showMessage('Reporte $id guardado; sincronización en curso.');
-        }
+        await _createReport(draft);
       } else {
+        setState(() => _busy = true);
         await _repository.updateReport(report.id, draft);
         if (mounted) _showMessage('Reporte actualizado.');
       }
@@ -86,6 +99,34 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (mounted) _showMessage(error.message);
     } catch (error) {
       if (mounted) _showMessage('No se pudo guardar el reporte: $error');
+    } finally {
+      if (report != null && mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _createReport(HealthReportDraft draft) async {
+    setState(() => _busy = true);
+    try {
+      final id = await _repository.createReport(draft, documentId: draft.id);
+      if (mounted) {
+        _showMessage('Reporte $id guardado; sincronización en curso.');
+      }
+    } on ReportStoreException catch (error) {
+      if (mounted) {
+        _showMessage(
+          error.message,
+          retry: error.code == 'unavailable' || error.code == 'api-error'
+              ? () => unawaited(_createReport(draft))
+              : null,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(
+          'No se pudo guardar el reporte: $error',
+          retry: () => unawaited(_createReport(draft)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -131,10 +172,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (mounted) _showMessage('ID de cuenta copiado.');
   }
 
-  void _showMessage(String message) {
+  void _showMessage(String message, {VoidCallback? retry}) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          action: retry == null
+              ? null
+              : SnackBarAction(label: 'Reintentar', onPressed: retry),
+        ),
+      );
   }
 
   @override
@@ -219,7 +267,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Reportes visibles según el rol y las asignaciones de esta cuenta.',
+                'Tus reportes de salud',
                 style: TextStyle(fontSize: 12),
               ),
               if (_repository.ownerUid case final uid?)
@@ -264,7 +312,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     final reports = _reports;
     if (reports == null) {
-      return const Center(child: CircularProgressIndicator());
+      return _messageState(
+        icon: Icons.hourglass_empty_rounded,
+        message: 'Cargando reportes...',
+      );
     }
     return StreamBuilder<List<HealthReport>>(
       stream: reports,
@@ -283,7 +334,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
         }
         if (snapshot.connectionState == ConnectionState.waiting &&
             !snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return _messageState(
+            icon: Icons.hourglass_empty_rounded,
+            message: 'Cargando reportes...',
+          );
         }
         final query = _search.text.trim().toLowerCase();
         final items = (snapshot.data ?? const <HealthReport>[])
@@ -305,6 +359,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           );
         }
         return ListView.separated(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 2, 20, 18),
           itemCount: items.length,
           separatorBuilder: (_, _) => const SizedBox(height: 9),
@@ -318,21 +373,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
     required IconData icon,
     required String message,
     Widget? action,
-  }) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 40, color: BioMedicaColors.muted),
-          const SizedBox(height: 12),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: BioMedicaColors.muted, height: 1.4),
+  }) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 40, color: BioMedicaColors.muted),
+                const SizedBox(height: 12),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: BioMedicaColors.muted,
+                    height: 1.4,
+                  ),
+                ),
+                if (action != null) ...[const SizedBox(height: 10), action],
+              ],
+            ),
           ),
-          if (action != null) ...[const SizedBox(height: 10), action],
-        ],
+        ),
       ),
     ),
   );
@@ -399,6 +465,29 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     color: BioMedicaColors.muted,
                     fontSize: 11,
                   ),
+                ),
+              if (report.reviewStatus == 'reviewed') ...[
+                const SizedBox(height: 7),
+                const Text(
+                  'Revisado por un médico',
+                  style: TextStyle(
+                    color: BioMedicaColors.green,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (report.reviewObservations?.isNotEmpty == true)
+                  Text(
+                    'Observaciones: ${report.reviewObservations}',
+                    style: const TextStyle(
+                      color: BioMedicaColors.ink,
+                      fontSize: 12,
+                    ),
+                  ),
+              ] else
+                const Text(
+                  'Pendiente de revisión médica',
+                  style: TextStyle(color: BioMedicaColors.muted, fontSize: 11),
                 ),
             ],
           ),
@@ -469,17 +558,23 @@ class _ReportFormDialog extends StatefulWidget {
 
 class _ReportFormDialogState extends State<_ReportFormDialog> {
   final _formKey = GlobalKey<FormState>();
+  late final String _draftId;
   late final _otherMalestar = TextEditingController(
     text: widget.report?.otherMalestar ?? '',
   );
   late final _description = TextEditingController(
     text: widget.report?.description ?? '',
   );
-  late String _malestar = widget.report?.malestar ??
-      widget.report?.equipment ??
-      'Fiebre';
+  late String _malestar =
+      widget.report?.malestar ?? widget.report?.equipment ?? 'Fiebre';
   late String _priority = widget.report?.priority ?? 'Media';
   late DateTime _onsetAt = widget.report?.onsetAt ?? DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _draftId = widget.report?.id ?? HealthReportDraft.generateId();
+  }
 
   @override
   void dispose() {
@@ -568,16 +663,16 @@ class _ReportFormDialogState extends State<_ReportFormDialog> {
   void _submit() {
     final onsetError = HealthReportValidation.onsetAt(_onsetAt);
     if (onsetError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(onsetError)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(onsetError)));
       return;
     }
     if (!_formKey.currentState!.validate()) return;
     Navigator.pop(
       context,
       HealthReportDraft(
-        id: widget.report?.id ?? '',
+        id: _draftId,
         equipment: _malestar,
         description: _description.text.trim(),
         priority: _priority,
@@ -632,10 +727,8 @@ class _ReportFormDialogState extends State<_ReportFormDialog> {
                     labelText: 'Especifica otro malestar *',
                   ),
                   maxLength: HealthReportValidation.maxMalestarLength,
-                  validator: (value) => HealthReportValidation.otherMalestar(
-                    value,
-                    _malestar,
-                  ),
+                  validator: (value) =>
+                      HealthReportValidation.otherMalestar(value, _malestar),
                 ),
               TextFormField(
                 key: const ValueKey('reportDescription'),

@@ -59,11 +59,23 @@ void main() {
     expect(draft.validate(now: now), contains('SpO₂'));
   });
 
-  test('rejects a stale watch capture', () {
+  test('accepts a watch capture delayed by a temporary sync interruption', () {
     final draft = WearableMeasurementDraft.fromWatchReading(
       capture(
         updatedAt: now
             .subtract(const Duration(minutes: 6))
+            .millisecondsSinceEpoch,
+      ),
+    );
+
+    expect(draft.validate(now: now), isNull);
+  });
+
+  test('rejects a watch capture older than the pending-sync window', () {
+    final draft = WearableMeasurementDraft.fromWatchReading(
+      capture(
+        updatedAt: now
+            .subtract(const Duration(hours: 24, minutes: 1))
             .millisecondsSinceEpoch,
       ),
     );
